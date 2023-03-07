@@ -101,6 +101,18 @@ uvgrtp::media_stream* uvgrtp::session::create_stream(uint16_t src_port, uint16_t
         return  nullptr;
     }
 
+    if (!(rce_flags & RCE_RTCP) && (rce_flags & RCE_ECN_TRAFFIC))
+    {
+        UVG_LOG_ERROR("ECN disabled, only available with RTCP");
+        rtp_errno = RTP_INVALID_VALUE;
+        return  nullptr;
+    }
+    else
+    {
+        if (!(rce_flags & RCE_ECN_ECT_0) && !(rce_flags & RCE_ECN_ECT_1))
+            rce_flags |= RCE_ECN_ECT_1;
+    }
+
     uvgrtp::media_stream* stream =
         new uvgrtp::media_stream(cname_, remote_address_, local_address_, src_port, dst_port, fmt, rce_flags);
 

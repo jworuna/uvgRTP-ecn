@@ -810,6 +810,7 @@ rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_fl
     LPFN_WSARECVMSG WsaRecvMsg;
     GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
 
+    //TODO: Check possibility to init this only once and not for each receive
     int wsaIoctlResult = ::WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
                                     &WSARecvMsg_GUID, sizeof(WSARecvMsg_GUID),
                                     &WsaRecvMsg, sizeof(WsaRecvMsg),
@@ -934,6 +935,7 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, buf_vec& buffers, int s
     LPFN_WSASENDMSG WSASendMsg;
     GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
 
+    //TODO: Check possibility to init this only once and not for each send
     int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
                                   &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
                                   &WSASendMsg, sizeof(WSASendMsg),

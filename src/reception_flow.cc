@@ -101,6 +101,9 @@ void uvgrtp::reception_flow::set_payload_size(const size_t& value)
 rtp_error_t uvgrtp::reception_flow::start(std::shared_ptr<uvgrtp::socket> socket, int rce_flags)
 {
     should_stop_ = false;
+    receive_ecn_ = false;
+    if ((rce_flags & RCE_ECN_TRAFFIC))
+        receive_ecn_ = true;
 
     UVG_LOG_DEBUG("Creating receiving threads and setting priorities");
     processor_ = std::unique_ptr<std::thread>(new std::thread(&uvgrtp::reception_flow::process_packet, this, rce_flags));
@@ -392,8 +395,20 @@ void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
                 rtp_error_t ret = RTP_OK;
 
                 // get the potential packet
-                ret = socket->recvfrom(ring_buffer_[next_write_index].data, payload_size_,
-                    MSG_DONTWAIT, &ring_buffer_[next_write_index].read);
+                if (!receive_ecn_)
+                {
+                    ret = socket->recvfrom(ring_buffer_[next_write_index].data, payload_size_,
+                                           MSG_DONTWAIT, &ring_buffer_[next_write_index].read);
+                }
+                else
+                {
+                    int ecn_bit;
+                    ret = socket->recvfrom(ring_buffer_[next_write_index].data, payload_size_,
+                                           MSG_DONTWAIT, &ring_buffer_[next_write_index].read, ecn_bit);
+
+                    //TODO: Read ecn works. Need to count based on time window and handover to rtcp
+                }
+
 
                 if (ret == RTP_INTERRUPTED)
                 {

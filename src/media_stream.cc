@@ -89,6 +89,16 @@ rtp_error_t uvgrtp::media_stream::init_connection()
         // no reason to fail sending even if binding fails so we set remote address first
         remote_sockaddr_ = socket_->create_sockaddr(family, remote_address_, dst_port_);
         socket_->set_sockaddr(remote_sockaddr_);
+
+        if ((rce_flags_ & RCE_ECN_TRAFFIC))
+        {
+            unsigned long ecnValue = ECN_ECT_1;
+            if ((rce_flags_ | RCE_ECN_ECT_0))
+                ecnValue = ECN_ECT_0;
+
+            if (socket_->set_ecn_send(family, ecnValue) == RTP_OK)
+                UVG_LOG_INFO("ECN sending enabled");
+        }
     }
     else
     {
@@ -97,6 +107,12 @@ rtp_error_t uvgrtp::media_stream::init_connection()
 
     if (!(rce_flags_ & RCE_SEND_ONLY))
     {
+        if ((rce_flags_ & RCE_ECN_TRAFFIC))
+        {
+            if (socket_->set_ecn_read(family) == RTP_OK)
+                UVG_LOG_INFO("ECN receiving enabled");
+        }
+
         if (local_address_ != "" && src_port_ != 0) {
             sockaddr_in bind_addr = socket_->create_sockaddr(family, local_address_, src_port_);
 

@@ -339,19 +339,34 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
             // sleep until next packet time
             std::this_thread::sleep_for(next_packet - std::chrono::high_resolution_clock::now());
 
-            //  send pkt vects
-            if (socket_->sendto(active_->packets[i], 0) != RTP_OK) {
+            rtp_error_t result;
+            if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+                result = socket_->sendto(active_->packets[i], 0);
+            else
+                //TODO: Check if we need this under LinuxOS
+                result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+
+            if (result != RTP_OK) {
                 UVG_LOG_ERROR("Failed to send packet: %li", errno);
                 (void)deinit_transaction();
                 return RTP_SEND_ERROR;
             }
         }
-
     }
-    else if (socket_->sendto(active_->packets, 0) != RTP_OK) {
-        UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
-        (void)deinit_transaction();
-        return RTP_SEND_ERROR;
+    else
+    {
+        rtp_error_t result;
+        if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+            result = socket_->sendto(active_->packets, 0);
+        else
+            //TODO: Check if we need this under LinuxOS
+            result = socket_->sendto(active_->packets, 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+
+        if (result != RTP_OK) {
+            UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
+            (void)deinit_transaction();
+            return RTP_SEND_ERROR;
+        }
     }
 
     //UVG_LOG_DEBUG("full message took %zu chunks and %zu messages", active_->chunk_ptr, active_->hdr_ptr);

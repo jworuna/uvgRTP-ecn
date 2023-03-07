@@ -23,10 +23,10 @@ The Traffic Class header used to be known as IPToS.
 ## Features
 
 - [ ] Receive ECN-Bits from IP-Header
-  - [ ] Windows
+  - [x] Windows
   - [ ] Linux
 - [ ] Set ECN-Bits to IP-Header
-  - [ ] Windows
+  - [x] Windows
   - [ ] Linux
 - [ ] Accumulation of received bits for a configurable time window
 - [ ] RTCP Report

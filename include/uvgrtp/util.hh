@@ -308,6 +308,20 @@ enum RTP_CTX_ENABLE_FLAGS {
    /// \endcond
 }; // maximum is 1 << 30 for int
 
+/** ECN_BITS
+ * \enum
+ *
+ * \brief Values to set or get ECN-Bits from IP-Header
+ *
+ * \details These flags are use by socket to receive or send TOS Bits
+ */
+enum ECN_BITS
+{
+    ECN_ECT_NON = 0,
+    ECN_ECT_1   = 0x01,
+    ECN_ECT_0   = 0x02,
+    ECN_ECT_CE  = 0x03
+};
 
 /**
  * \enum RTP_CTX_CONFIGURATION_FLAGS

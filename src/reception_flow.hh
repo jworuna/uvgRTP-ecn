@@ -183,6 +183,7 @@ namespace uvgrtp {
             void (*recv_hook_)(void *arg, uvgrtp::frame::rtp_frame *frame);
 
             bool should_stop_;
+            bool receive_ecn_;
 
             std::unique_ptr<std::thread> receiver_;
             std::unique_ptr<std::thread> processor_;
