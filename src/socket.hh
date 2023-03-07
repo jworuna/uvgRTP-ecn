@@ -169,6 +169,31 @@ namespace uvgrtp {
              * "arg" is an optional parameter that can be passed to the handler when it's called */
             rtp_error_t install_handler(void *arg, packet_handler_vec handler);
 
+            /* Enable read ECN, get ECN-Bit from IP-Header on incoming packets */
+            rtp_error_t set_ecn_read(short address_family);
+
+            /* Enable sent ECN, sets IP-Header ECN-Bit in outgoing packets */
+            rtp_error_t set_ecn_send(short address_family, unsigned long ecn_bit);
+
+            /*
+             * SendTo socket, writes data to the socket and sets given ECN-Bit on outgoing traffic
+             * 0, 3 are forbidden
+             * 1: ECN Capable Transport(1), ECT(1)
+             * 2: ECN Capable Transport(0), ECT(0)
+             */
+            rtp_error_t sendto(buf_vec& buffers, int send_flags, unsigned long ecn_bit);
+            rtp_error_t sendto(pkt_vec& buffers, int send_flags, unsigned long ecn_bit);
+
+            /*
+            * RecvFrom socket, writes buffer with received data and returns additional the ECN-Bit from IP-Header as int
+            * 0: Not ECN-Capable Transport, Not-ECT
+            * 1: ECN Capable Transport(1), ECT(1)
+            * 2: ECN Capable Transport(0), ECT(0)
+            * 3: Congestion Experienced, CE
+            */
+            rtp_error_t recvfrom(uint8_t *buf, size_t buf_len, int recv_flags, int *bytes_read, int &ecn_bit);
+
+
         private:
 
             /* helper function for sending UPD packets, see documentation for sendto() above */
@@ -179,6 +204,10 @@ namespace uvgrtp {
             /* __sendtov() does the same as __sendto but it combines multiple buffers into one frame and sends them */
             rtp_error_t __sendtov(sockaddr_in& addr, buf_vec& buffers, int send_flags, int *bytes_sent);
             rtp_error_t __sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffers, int send_flags, int *bytes_sent);
+
+            rtp_error_t __recvfrom(uint8_t *buf, size_t buf_len, int recv_flags, sockaddr_in *sender, int *bytes_read, int &ecn_bit);
+            rtp_error_t __sendtov(sockaddr_in& addr, buf_vec& buffers, int send_flags, int *bytes_sent, unsigned long ecn_bit);
+            rtp_error_t __sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffers, int send_flags, int *bytes_sent, unsigned long ecn_bit);
 
             socket_t socket_;
             sockaddr_in remote_address_;

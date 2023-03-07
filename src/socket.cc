@@ -718,3 +718,353 @@ sockaddr_in& uvgrtp::socket::get_out_address()
 {
     return remote_address_;
 }
+
+// ECN preparation
+rtp_error_t uvgrtp::socket::set_ecn_read(short address_family)
+{
+    RTP_ERROR result;
+
+    int recvEcn = 1;
+    switch (address_family) {
+        case AF_INET:
+            result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_ECN, (char*)&recvEcn, sizeof(recvEcn));
+            break;
+        case AF_INET6:
+            result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_ECN, (char*)&recvEcn, sizeof(recvEcn));
+            break;
+        default:
+            UVG_LOG_WARN("ECN only supports IPv4 and IPv6");
+            result = RTP_GENERIC_ERROR;
+    }
+
+    if (result == RTP_GENERIC_ERROR)
+        UVG_LOG_WARN("Enabling incoming ECN failed!");
+
+    return result;
+}
+
+rtp_error_t uvgrtp::socket::set_ecn_send(short address_family, unsigned long ecn_bit)
+{
+    RTP_ERROR result;
+
+    switch (address_family) {
+        case AF_INET:
+            result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_ECN, (CHAR*)&ecn_bit, sizeof(ecn_bit));
+            break;
+        case AF_INET6:
+            result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_ECN, (CHAR*)&ecn_bit, sizeof(ecn_bit));
+            break;
+        default:
+            UVG_LOG_WARN("ECN only supports IPv4 and IPv6");
+            result = RTP_GENERIC_ERROR;
+    }
+
+    if (result == RTP_GENERIC_ERROR)
+        UVG_LOG_WARN("Enabling outgoing ECN failed!");
+
+    return result;
+}
+
+// ECN receive
+rtp_error_t uvgrtp::socket::recvfrom(uint8_t *buf, size_t buf_len, int recv_flags, int *bytes_read, int &ecn_bit)
+{
+    return __recvfrom(buf, buf_len, recv_flags, &get_out_address(), bytes_read, ecn_bit);
+}
+
+rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_flags, sockaddr_in *sender, int *bytes_read, int &ecn_bit)
+{
+    socklen_t *len_ptr = nullptr;
+    socklen_t len      = sizeof(sockaddr_in);
+
+    if (sender)
+        len_ptr = &len;
+
+#ifndef _WIN32
+    // ancillary data (Linux)
+    //TODO: Has to be develope on a linux machine
+#else
+    (void)recv_flags;
+
+    WSABUF DataBuf;
+    DataBuf.len = (u_long)buf_len;
+    DataBuf.buf = (char *)buf;
+    DWORD bytes_received = 0;
+    DWORD d_recv_flags = 0;
+
+    // Prepare WSAMSG to obtain additional ancillary data (Windows)
+    CHAR control[WSA_CMSG_SPACE(sizeof(INT))] = { 0 };
+
+    WSABUF ControlBuf;
+    ControlBuf.buf = control;
+    ControlBuf.len = sizeof(control);
+
+    WSAMSG WsaMsg;
+    WsaMsg.name = (struct sockaddr *)sender;
+    WsaMsg.namelen = sizeof(struct sockaddr_storage);
+    WsaMsg.lpBuffers = &DataBuf;
+    WsaMsg.dwBufferCount = 1;
+    WsaMsg.Control = ControlBuf;
+    WsaMsg.dwFlags = d_recv_flags;
+
+    //Get the function pointer to WsaRecvMsg
+    LPFN_WSARECVMSG WsaRecvMsg;
+    GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
+
+    int wsaIoctlResult = ::WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                                    &WSARecvMsg_GUID, sizeof(WSARecvMsg_GUID),
+                                    &WsaRecvMsg, sizeof(WsaRecvMsg),
+                                    &bytes_received, nullptr, nullptr);
+    if (wsaIoctlResult == SOCKET_ERROR)
+    {
+        win_get_last_error();
+        UVG_LOG_ERROR("Could not initialize WSARecvMsg on socket");
+        set_bytes(bytes_read, -1);
+        return RTP_GENERIC_ERROR;
+    }
+
+    int rc = WsaRecvMsg(socket_, &WsaMsg, &bytes_received, nullptr, nullptr);
+    if (WSAGetLastError() == WSAEWOULDBLOCK)
+        return RTP_INTERRUPTED;
+
+    int err = 0;
+    if ((rc == SOCKET_ERROR) && (WSA_IO_PENDING != (err = WSAGetLastError()))) {
+        /* win_get_last_error(); */
+        set_bytes(bytes_read, -1);
+        return RTP_GENERIC_ERROR;
+    }
+
+    PCMSGHDR cmsg = WSA_CMSG_FIRSTHDR(&WsaMsg);
+    while(cmsg != nullptr)
+    {
+        if ((cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_ECN) ||
+            (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_ECN))
+        {
+            ecn_bit = *(PINT) WSA_CMSG_DATA(cmsg);
+            break;
+        }
+        cmsg = WSA_CMSG_NXTHDR(&WsaMsg, cmsg);
+    }
+
+    set_bytes(bytes_read, bytes_received);
+#endif
+
+#ifndef NDEBUG
+    ++received_packets_;
+#endif // !NDEBUG
+
+    return RTP_OK;
+}
+
+// ECN send
+rtp_error_t uvgrtp::socket::sendto(buf_vec& buffers, int send_flags, unsigned long ecn_bit)
+{
+    rtp_error_t ret = RTP_OK;
+
+    for (auto& handler : vec_handlers_) {
+        if ((ret = (*handler.handler)(handler.arg, buffers)) != RTP_OK) {
+            UVG_LOG_ERROR("Malformed packet");
+            return ret;
+        }
+    }
+
+    return __sendtov(remote_address_, buffers, send_flags, nullptr, ecn_bit);
+}
+
+rtp_error_t uvgrtp::socket::sendto(pkt_vec &buffers, int send_flags, unsigned long ecn_bit)
+{
+    rtp_error_t ret = RTP_OK;
+
+    for (auto& buffer : buffers) {
+        for (auto& handler : vec_handlers_) {
+            if ((ret = (*handler.handler)(handler.arg, buffer)) != RTP_OK) {
+                UVG_LOG_ERROR("Malformed packet");
+                return ret;
+            }
+        }
+    }
+
+    return __sendtov(remote_address_, buffers, send_flags, nullptr, ecn_bit);
+}
+
+rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, buf_vec& buffers, int send_flags, int *bytes_sent, unsigned long ecn_bit)
+{
+    if (ecn_bit < 1 || ecn_bit > 2) {
+        UVG_LOG_WARN("ecn-bit must set to ECT(1)[1] or ECT(0)[2] fallback to NON-ECT[0]");
+        ecn_bit = 0;
+    }
+
+#ifndef _WIN32
+    // set ancillary data (Linux)
+    //TODO: Has to be develope on a linux machine
+#else
+    // DWORD corresponds to uint16 on most platforms
+    if (buffers.size() > UINT16_MAX)
+    {
+        UVG_LOG_ERROR("Trying to send too large buffer");
+        return RTP_INVALID_VALUE;
+    }
+
+    /* create WSABUFs from input buffers and send them at once */
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        buffers_[i].len = (ULONG)buffers.at(i).first;
+        buffers_[i].buf = (char *)buffers.at(i).second;
+    }
+
+    DWORD sent_bytes = 0;
+
+    CHAR control[WSA_CMSG_SPACE(sizeof(INT))];
+    WSABUF ControlBuf;
+    ControlBuf.buf = control;
+    ControlBuf.len = sizeof(control);
+
+    WSAMSG WsaMsg;
+    WsaMsg.name = (SOCKADDR *) &addr;
+    WsaMsg.namelen = sizeof(addr);
+    WsaMsg.lpBuffers = buffers_;
+    WsaMsg.dwBufferCount = (DWORD)buffers.size();
+    WsaMsg.Control = ControlBuf;
+    WsaMsg.dwFlags = 0;
+
+    PCMSGHDR cmsg = WSA_CMSG_FIRSTHDR(&WsaMsg);
+    cmsg->cmsg_len = WSA_CMSG_LEN(sizeof(INT));
+    cmsg->cmsg_level = (addr.sin_family == AF_INET) ? IPPROTO_IP : IPPROTO_IPV6;
+    cmsg->cmsg_type = (addr.sin_family == AF_INET) ? IP_ECN : IPV6_ECN;
+    *(PINT) WSA_CMSG_DATA(cmsg) = ecn_bit;
+
+    LPFN_WSASENDMSG WSASendMsg;
+    GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
+
+    int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                                  &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
+                                  &WSASendMsg, sizeof(WSASendMsg),
+                                  &sent_bytes, nullptr, nullptr);
+
+    if (wsaIoctlResult == SOCKET_ERROR)
+    {
+        win_get_last_error();
+        UVG_LOG_ERROR("Could not initialize WSASendMsg on socket");
+        set_bytes(bytes_sent, -1);
+        return RTP_GENERIC_ERROR;
+    }
+
+    if (WSASendMsg(socket_, &WsaMsg, send_flags, &sent_bytes, nullptr, nullptr) == -1)
+    {
+        win_get_last_error();
+
+        UVG_LOG_ERROR("Failed to send to %s", sockaddr_to_string(addr).c_str());
+
+        set_bytes(bytes_sent, -1);
+        return RTP_SEND_ERROR;
+    }
+
+#endif
+
+#ifndef NDEBUG
+    ++sent_packets_;
+#endif // !NDEBUG
+
+    set_bytes(bytes_sent, sent_bytes);
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffers, int send_flags, int *bytes_sent, unsigned long ecn_bit)
+{
+    rtp_error_t return_value = RTP_OK;
+
+#ifndef _WIN32
+    int sent_bytes = 0;
+
+    // set ancillary data (Linux)
+    //TODO: Has to be develope on a linux machine
+#else
+    int sent_bytes = 0;
+    DWORD ioctl_send_bytes = 0;
+    INT ret = 0;
+    WSABUF wsa_bufs[WSABUF_SIZE];
+
+    LPFN_WSASENDMSG WSASendMsg;
+    GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
+
+    int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                                  &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
+                                  &WSASendMsg, sizeof(WSASendMsg),
+                                  &ioctl_send_bytes, nullptr, nullptr);
+
+    if (wsaIoctlResult == SOCKET_ERROR)
+    {
+        win_get_last_error();
+        UVG_LOG_ERROR("Could not initialize WSASendMsg on socket");
+        set_bytes(bytes_sent, -1);
+        return RTP_GENERIC_ERROR;
+    }
+
+    for (auto& buffer : buffers) {
+
+        if (buffer.size() > WSABUF_SIZE) {
+            UVG_LOG_ERROR("Input vector to __sendtov() has more than %u elements!", WSABUF_SIZE);
+            return_value = RTP_GENERIC_ERROR;
+            break;
+        }
+
+        /* create WSABUFs from input buffer and send them at once */
+        for (size_t i = 0; i < buffer.size(); ++i) {
+            wsa_bufs[i].len = (ULONG) buffer.at(i).first;
+            wsa_bufs[i].buf = (char *) buffer.at(i).second;
+        }
+
+        DWORD sent_bytes_dw = 0;
+
+        CHAR control[WSA_CMSG_SPACE(sizeof(INT))];
+        WSABUF ControlBuf;
+        ControlBuf.buf = control;
+        ControlBuf.len = sizeof(control);
+
+        struct sockaddr converted;
+        std::memcpy(&converted, (struct sockaddr*) &addr, sizeof(addr));
+
+        WSAMSG WsaMsg;
+        WsaMsg.name = (SOCKADDR *) &addr;
+        WsaMsg.namelen = sizeof(addr);
+        WsaMsg.lpBuffers = wsa_bufs;
+        WsaMsg.dwBufferCount = (DWORD) buffer.size();
+        WsaMsg.Control = ControlBuf;
+        WsaMsg.dwFlags = send_flags;
+
+        PCMSGHDR cmsg = WSA_CMSG_FIRSTHDR(&WsaMsg);
+        cmsg->cmsg_len = WSA_CMSG_LEN(sizeof(INT));
+        cmsg->cmsg_level = (addr.sin_family == AF_INET) ? IPPROTO_IP : IPPROTO_IPV6;
+        cmsg->cmsg_type = (addr.sin_family == AF_INET) ? IP_ECN : IPV6_ECN;
+        *(PINT) WSA_CMSG_DATA(cmsg) = (INT) ecn_bit;
+
+        send_with_ecn_:
+
+        ret = WSASendMsg(socket_, &WsaMsg, 0, &sent_bytes_dw, nullptr, nullptr);
+        sent_bytes = sent_bytes_dw;
+
+        if (ret == SOCKET_ERROR) {
+            int error = WSAGetLastError();
+            if (error == WSAEWOULDBLOCK) {
+                UVG_LOG_DEBUG("WSASendTo would block, trying again after 3 ms");
+                std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                goto send_with_ecn_;
+            } else {
+                UVG_LOG_DEBUG("WSASendMsg failed with error %li", error);
+                log_platform_error("WSASendMsg() failed");
+
+                UVG_LOG_ERROR("Failed to send to %s", sockaddr_to_string(addr).c_str());
+            }
+
+            sent_bytes = -1;
+            return_value = RTP_SEND_ERROR;
+            break;
+        }
+    }
+#endif
+
+#ifndef NDEBUG
+    sent_packets_ += buffers.size();
+#endif // !NDEBUG
+
+    set_bytes(bytes_sent, sent_bytes);
+    return return_value;
+}
