@@ -226,6 +226,8 @@ namespace uvgrtp {
 #endif // !NDEBUG
 
 #ifdef _WIN32
+            // Function pointer
+            LPFN_WSARECVMSG WsaRecvMsg;
             WSABUF buffers_[MAX_BUFFER_COUNT];
 #else
             struct mmsghdr header_;

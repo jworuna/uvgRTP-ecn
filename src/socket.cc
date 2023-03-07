@@ -740,6 +740,24 @@ rtp_error_t uvgrtp::socket::set_ecn_read(short address_family)
     if (result == RTP_GENERIC_ERROR)
         UVG_LOG_WARN("Enabling incoming ECN failed!");
 
+#if _WIN32
+    //Get the function pointer to WsaRecvMsg
+    DWORD bytes_received;
+    GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
+
+    int wsaIoctlResult = ::WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                                    &WSARecvMsg_GUID, sizeof(WSARecvMsg_GUID),
+                                    &WsaRecvMsg, sizeof(WsaRecvMsg),
+                                    &bytes_received, nullptr, nullptr);
+
+    if (wsaIoctlResult == SOCKET_ERROR)
+    {
+        win_get_last_error();
+        UVG_LOG_ERROR("Could not initialize WSARecvMsg on socket");
+        return RTP_GENERIC_ERROR;
+    }
+#endif
+
     return result;
 }
 
@@ -805,23 +823,6 @@ rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_fl
     WsaMsg.dwBufferCount = 1;
     WsaMsg.Control = ControlBuf;
     WsaMsg.dwFlags = d_recv_flags;
-
-    //Get the function pointer to WsaRecvMsg
-    LPFN_WSARECVMSG WsaRecvMsg;
-    GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
-
-    //TODO: Check possibility to init this only once and not for each receive
-    int wsaIoctlResult = ::WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                                    &WSARecvMsg_GUID, sizeof(WSARecvMsg_GUID),
-                                    &WsaRecvMsg, sizeof(WsaRecvMsg),
-                                    &bytes_received, nullptr, nullptr);
-    if (wsaIoctlResult == SOCKET_ERROR)
-    {
-        win_get_last_error();
-        UVG_LOG_ERROR("Could not initialize WSARecvMsg on socket");
-        set_bytes(bytes_read, -1);
-        return RTP_GENERIC_ERROR;
-    }
 
     int rc = WsaRecvMsg(socket_, &WsaMsg, &bytes_received, nullptr, nullptr);
     if (WSAGetLastError() == WSAEWOULDBLOCK)

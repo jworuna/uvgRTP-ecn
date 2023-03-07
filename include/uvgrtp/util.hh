@@ -292,7 +292,8 @@ enum RTP_CTX_ENABLE_FLAGS {
      * @n - Counts all packets with ECN-CE
      * @details Time window in milliseconds to count ECN-CE marked packets (default 10 ms)
     */
-    RCE_ECN_COUNT_TIME_WINDOW    = 1 << 22,
+    //TODO: Wrong here, must move somewhere else
+    RCE_ECN_AGGREGATION_TIME_WINDOW    = 1 << 22,
 
     /**
     * @brief Marks outgoing packets with ECT(0) default (RCE_ECN_ECT_1)
