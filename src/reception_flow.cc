@@ -383,7 +383,6 @@ void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
             break;
         }
 
-        int testEcn = 0;
         if (pfds->revents & POLLIN) {
 
             // we write as many packets as socket has in the buffer
@@ -406,10 +405,6 @@ void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
                     int ecn_bit;
                     ret = socket->recvfrom(ring_buffer_[next_write_index].data, payload_size_,
                                            MSG_DONTWAIT, &ring_buffer_[next_write_index].read, ecn_bit);
-
-                    if (testEcn % 600)
-                        printf("EcnBit: %i\n", ecn_bit);
-                    testEcn++;
 
                     //TODO: Read ecn works. Need to count based on time window and handover to rtcp
                 }
