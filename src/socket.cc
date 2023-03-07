@@ -780,6 +780,23 @@ rtp_error_t uvgrtp::socket::set_ecn_send(short address_family, unsigned long ecn
     if (result == RTP_GENERIC_ERROR)
         UVG_LOG_WARN("Enabling outgoing ECN failed!");
 
+#if _WIN32
+    DWORD ioctl_send_bytes = 0;
+    GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
+
+    int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                                  &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
+                                  &WSASendMsg, sizeof(WSASendMsg),
+                                  &ioctl_send_bytes, nullptr, nullptr);
+
+    if (wsaIoctlResult == SOCKET_ERROR)
+    {
+        win_get_last_error();
+        UVG_LOG_ERROR("Could not initialize WSASendMsg on socket");
+        return RTP_GENERIC_ERROR;
+    }
+#endif
+
     return result;
 }
 
@@ -933,23 +950,6 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, buf_vec& buffers, int s
     cmsg->cmsg_type = (addr.sin_family == AF_INET) ? IP_ECN : IPV6_ECN;
     *(PINT) WSA_CMSG_DATA(cmsg) = ecn_bit;
 
-    LPFN_WSASENDMSG WSASendMsg;
-    GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
-
-    //TODO: Check possibility to init this only once and not for each send
-    int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                                  &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
-                                  &WSASendMsg, sizeof(WSASendMsg),
-                                  &sent_bytes, nullptr, nullptr);
-
-    if (wsaIoctlResult == SOCKET_ERROR)
-    {
-        win_get_last_error();
-        UVG_LOG_ERROR("Could not initialize WSASendMsg on socket");
-        set_bytes(bytes_sent, -1);
-        return RTP_GENERIC_ERROR;
-    }
-
     if (WSASendMsg(socket_, &WsaMsg, send_flags, &sent_bytes, nullptr, nullptr) == -1)
     {
         win_get_last_error();
@@ -981,25 +981,8 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffer
     //TODO: Has to be develope on a linux machine
 #else
     int sent_bytes = 0;
-    DWORD ioctl_send_bytes = 0;
     INT ret = 0;
     WSABUF wsa_bufs[WSABUF_SIZE];
-
-    LPFN_WSASENDMSG WSASendMsg;
-    GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
-
-    int wsaIoctlResult = WSAIoctl(socket_, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                                  &WSASendMsg_Guid, sizeof(WSASendMsg_Guid),
-                                  &WSASendMsg, sizeof(WSASendMsg),
-                                  &ioctl_send_bytes, nullptr, nullptr);
-
-    if (wsaIoctlResult == SOCKET_ERROR)
-    {
-        win_get_last_error();
-        UVG_LOG_ERROR("Could not initialize WSASendMsg on socket");
-        set_bytes(bytes_sent, -1);
-        return RTP_GENERIC_ERROR;
-    }
 
     for (auto& buffer : buffers) {
 

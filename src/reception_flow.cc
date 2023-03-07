@@ -409,7 +409,6 @@ void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
                     //TODO: Read ecn works. Need to count based on time window and handover to rtcp
                 }
 
-
                 if (ret == RTP_INTERRUPTED)
                 {
                     break;
