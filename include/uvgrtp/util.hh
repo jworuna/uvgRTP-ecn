@@ -274,9 +274,37 @@ enum RTP_CTX_ENABLE_FLAGS {
 
     /** Paces the sending of frame fragments within frame interval (default 1/30 s) */
     RCE_PACE_FRAGMENT_SENDING       = 1 << 20,
-    
+
+    /**
+    * @brief Enable ECN capability
+    * @details
+    * Only works if booth, sender and receiver, enables this feature.
+    * Sender will set ECT(1) in TOS Bits of the IP-Header,
+    * receiver will receive TOS Bits from the IP-Header and counts all
+    * incoming packets ECT(1) and all ECN-CE marked packets
+    * and sends an ECN Application defined RTCP Report to the sender.
+   */
+    RCE_ECN_TRAFFIC                    = 1 << 21,
+
+    /**
+     * @brief Change ECN counting time window (default 10 ms)
+     * @n - Counts all packets arriving packets
+     * @n - Counts all packets with ECN-CE
+     * @details Time window in milliseconds to count ECN-CE marked packets (default 10 ms)
+    */
+    RCE_ECN_COUNT_TIME_WINDOW    = 1 << 22,
+
+    /**
+    * @brief Marks outgoing packets with ECT(0) default (RCE_ECN_ECT_1)
+    */
+    RCE_ECN_ECT_0                    = 1 << 23,
+    /**
+     * @brief Marks outgoing packets with ECT(1) default
+     */
+    RCE_ECN_ECT_1                    = 1 << 24,
+
     /// \cond DO_NOT_DOCUMENT
-    RCE_LAST                        = 1 << 21
+    RCE_LAST                        = 1 << 25
    /// \endcond
 }; // maximum is 1 << 30 for int
 
