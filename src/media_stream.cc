@@ -93,7 +93,7 @@ rtp_error_t uvgrtp::media_stream::init_connection()
         if ((rce_flags_ & RCE_ECN_TRAFFIC))
         {
             unsigned long ecnValue = ECN_ECT_1;
-            if ((rce_flags_ | RCE_ECN_ECT_0))
+            if ((rce_flags_ & RCE_ECN_ECT_0))
                 ecnValue = ECN_ECT_0;
 
             if (socket_->set_ecn_send(family, ecnValue) == RTP_OK)

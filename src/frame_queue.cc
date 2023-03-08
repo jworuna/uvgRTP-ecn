@@ -343,8 +343,12 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
             if (!(rce_flags_ & RCE_ECN_TRAFFIC))
                 result = socket_->sendto(active_->packets[i], 0);
             else
-                //TODO: Check if we need this under LinuxOS
+            {
+#ifdef _WIN32
                 result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+#endif
+                result = socket_->sendto(active_->packets[i], 0);
+            }
 
             if (result != RTP_OK) {
                 UVG_LOG_ERROR("Failed to send packet: %li", errno);
@@ -359,8 +363,12 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
         if (!(rce_flags_ & RCE_ECN_TRAFFIC))
             result = socket_->sendto(active_->packets, 0);
         else
-            //TODO: Check if we need this under LinuxOS
+        {
+#ifdef _WIN32
             result = socket_->sendto(active_->packets, 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+#endif
+            result = socket_->sendto(active_->packets, 0);
+        }
 
         if (result != RTP_OK) {
             UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);

@@ -727,10 +727,18 @@ rtp_error_t uvgrtp::socket::set_ecn_read(short address_family)
     int recvEcn = 1;
     switch (address_family) {
         case AF_INET:
+#ifdef _WIN32
             result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_ECN, (char*)&recvEcn, sizeof(recvEcn));
+#else
+            result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_RECVTOS, (char*)&recvEcn, sizeof(recvEcn));
+#endif
             break;
         case AF_INET6:
+#ifdef _WIN32
             result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_ECN, (char*)&recvEcn, sizeof(recvEcn));
+#else
+            result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_RECVTCLASS, (char*)&recvEcn, sizeof(recvEcn));
+#endif
             break;
         default:
             UVG_LOG_WARN("ECN only supports IPv4 and IPv6");
@@ -740,7 +748,7 @@ rtp_error_t uvgrtp::socket::set_ecn_read(short address_family)
     if (result == RTP_GENERIC_ERROR)
         UVG_LOG_WARN("Enabling incoming ECN failed!");
 
-#if _WIN32
+#ifdef _WIN32
     //Get the function pointer to WsaRecvMsg
     DWORD bytes_received;
     GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
@@ -767,10 +775,18 @@ rtp_error_t uvgrtp::socket::set_ecn_send(short address_family, unsigned long ecn
 
     switch (address_family) {
         case AF_INET:
+#ifdef _WIN32
             result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_ECN, (CHAR*)&ecn_bit, sizeof(ecn_bit));
+#else
+            result = uvgrtp::socket::setsockopt(IPPROTO_IP, IP_TOS, (char*)&ecn_bit, sizeof(ecn_bit));
+#endif
             break;
         case AF_INET6:
+#ifdef _WIN32
             result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_ECN, (CHAR*)&ecn_bit, sizeof(ecn_bit));
+#else
+            result = uvgrtp::socket::setsockopt(IPPROTO_IPV6, IPV6_TCLASS, (char*)&ecn_bit, sizeof(ecn_bit));
+#endif
             break;
         default:
             UVG_LOG_WARN("ECN only supports IPv4 and IPv6");
@@ -780,7 +796,7 @@ rtp_error_t uvgrtp::socket::set_ecn_send(short address_family, unsigned long ecn
     if (result == RTP_GENERIC_ERROR)
         UVG_LOG_WARN("Enabling outgoing ECN failed!");
 
-#if _WIN32
+#ifdef _WIN32
     DWORD ioctl_send_bytes = 0;
     GUID WSASendMsg_Guid = WSAID_WSASENDMSG;
 
@@ -808,15 +824,49 @@ rtp_error_t uvgrtp::socket::recvfrom(uint8_t *buf, size_t buf_len, int recv_flag
 
 rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_flags, sockaddr_in *sender, int *bytes_read, int &ecn_bit)
 {
-    socklen_t *len_ptr = nullptr;
-    socklen_t len      = sizeof(sockaddr_in);
-
-    if (sender)
-        len_ptr = &len;
-
 #ifndef _WIN32
-    // ancillary data (Linux)
-    //TODO: Has to be develope on a linux machine
+    struct iovec dataBuf = {};
+    struct msghdr msg = {};
+    char control[CMSG_SPACE(sizeof(int))];
+
+    dataBuf.iov_base = (char*)buf;
+    dataBuf.iov_len = buf_len;
+
+    msg.msg_name = (struct sockaddr*)sender;
+    msg.msg_namelen = sizeof(struct sockaddr_storage);
+    msg.msg_control = (void*)control;
+    msg.msg_controllen = sizeof(control);
+    msg.msg_iov = &dataBuf;
+    msg.msg_iovlen = 1;
+    msg.msg_flags = 0;
+
+    int32_t ret = ::recvmsg(socket_, &msg, recv_flags);
+
+    if (ret == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            set_bytes(bytes_read, 0);
+            return RTP_INTERRUPTED;
+        }
+        UVG_LOG_ERROR("recvfrom failed: %s", strerror(errno));
+
+        set_bytes(bytes_read, -1);
+        return RTP_GENERIC_ERROR;
+    }
+
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+
+    while(cmsg != nullptr)
+    {
+        if ((cmsg->cmsg_level == IPPROTO_IP && (cmsg->cmsg_type == IP_TOS || cmsg->cmsg_type == IP_RECVTOS)) ||
+            (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_TCLASS))
+        {
+            ecn_bit = *((unsigned char*) CMSG_DATA(cmsg));
+            break;
+        }
+        cmsg = CMSG_NXTHDR(&msg, cmsg);
+    }
+
+    set_bytes(bytes_read, ret);
 #else
     (void)recv_flags;
 
@@ -874,6 +924,8 @@ rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_fl
     return RTP_OK;
 }
 
+#ifdef _WIN32
+
 // ECN send
 rtp_error_t uvgrtp::socket::sendto(buf_vec& buffers, int send_flags, unsigned long ecn_bit)
 {
@@ -912,10 +964,6 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, buf_vec& buffers, int s
         ecn_bit = 0;
     }
 
-#ifndef _WIN32
-    // set ancillary data (Linux)
-    //TODO: Has to be develope on a linux machine
-#else
     // DWORD corresponds to uint16 on most platforms
     if (buffers.size() > UINT16_MAX)
     {
@@ -960,8 +1008,6 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, buf_vec& buffers, int s
         return RTP_SEND_ERROR;
     }
 
-#endif
-
 #ifndef NDEBUG
     ++sent_packets_;
 #endif // !NDEBUG
@@ -974,12 +1020,6 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffer
 {
     rtp_error_t return_value = RTP_OK;
 
-#ifndef _WIN32
-    int sent_bytes = 0;
-
-    // set ancillary data (Linux)
-    //TODO: Has to be develope on a linux machine
-#else
     int sent_bytes = 0;
     INT ret = 0;
     WSABUF wsa_bufs[WSABUF_SIZE];
@@ -1045,7 +1085,6 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffer
             break;
         }
     }
-#endif
 
 #ifndef NDEBUG
     sent_packets_ += buffers.size();
@@ -1054,3 +1093,5 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffer
     set_bytes(bytes_sent, sent_bytes);
     return return_value;
 }
+
+#endif
