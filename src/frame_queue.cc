@@ -346,8 +346,9 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
             {
 #ifdef _WIN32
                 result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
-#endif
+#else
                 result = socket_->sendto(active_->packets[i], 0);
+#endif
             }
 
             if (result != RTP_OK) {
@@ -366,8 +367,9 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
         {
 #ifdef _WIN32
             result = socket_->sendto(active_->packets, 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
-#endif
+#else
             result = socket_->sendto(active_->packets, 0);
+#endif
         }
 
         if (result != RTP_OK) {
