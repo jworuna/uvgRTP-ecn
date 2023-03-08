@@ -28,7 +28,9 @@ namespace uvgrtp {
             RTCP_FT_RR   = 201, /* Receiver report */
             RTCP_FT_SDES = 202, /* Source description */
             RTCP_FT_BYE  = 203, /* Goodbye */
-            RTCP_FT_APP  = 204  /* Application-specific message */
+            RTCP_FT_APP  = 204, /* Application-specific message */
+            /** \brief See <a href="https://www.rfc-editor.org/rfc/rfc4585#section-6.1" target="_blank">RFC 4585 section 6.1</a> */
+            RTCP_RTP_FB  = 205  /* RTP/AVPF transport-layer feedback */
         };
 
         PACK(struct rtp_header {
@@ -155,6 +157,31 @@ namespace uvgrtp {
             uint8_t *payload = nullptr;
             /** \brief Size of the payload in bytes. Added by uvgRTP to help process the payload. */
             size_t payload_len = 0;
+        };
+
+        /**
+         * @brief Somehow based on <a href="https://www.rfc-editor.org/rfc/rfc6679#section-5.1" target="_blank">RFC 6679 section 5.1</a>
+         * @brief Maybe will be updated to match the whole RFC-6679 defined report
+         * @param packet_count_tw all counted packets in the defined time window
+         * @param ect_ce_count_tw all counted packets with ECN-CE in the defined time window
+         * */
+        struct rtcp_ecn_report_packet {
+            struct rtcp_header header;
+            uint32_t ssrc = 0;
+            //uint32_t msrc = 0;
+            /**
+             * @param packet_count_tw all counted packets in the defined time window
+             */
+            uint32_t ext_highest_seq_num = 0;
+            uint32_t packet_count_tw = 0;
+            uint32_t ect_ce_count_tw = 0;
+
+            //uint32_t ect_0 = 0;
+            //uint32_t ect_1 = 0;
+            //uint16_t ect_ce = 0;
+            //uint16_t ect_non = 0;
+            //uint16_t packet_loss = 0;
+            //uint16_t packet_duplication = 0;
         };
 
         PACK(struct zrtp_frame {

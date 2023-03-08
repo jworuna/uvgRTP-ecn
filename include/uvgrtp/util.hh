@@ -287,25 +287,16 @@ enum RTP_CTX_ENABLE_FLAGS {
     RCE_ECN_TRAFFIC                    = 1 << 21,
 
     /**
-     * @brief Change ECN counting time window (default 10 ms)
-     * @n - Counts all packets arriving packets
-     * @n - Counts all packets with ECN-CE
-     * @details Time window in milliseconds to count ECN-CE marked packets (default 10 ms)
-    */
-    //TODO: Wrong here, must move somewhere else
-    RCE_ECN_AGGREGATION_TIME_WINDOW    = 1 << 22,
-
-    /**
     * @brief Marks outgoing packets with ECT(0) default (RCE_ECN_ECT_1)
     */
-    RCE_ECN_ECT_0                    = 1 << 23,
+    RCE_ECN_ECT_0                    = 1 << 22,
     /**
      * @brief Marks outgoing packets with ECT(1) default
      */
-    RCE_ECN_ECT_1                    = 1 << 24,
+    RCE_ECN_ECT_1                    = 1 << 23,
 
     /// \cond DO_NOT_DOCUMENT
-    RCE_LAST                        = 1 << 25
+    RCE_LAST                        = 1 << 24
    /// \endcond
 }; // maximum is 1 << 30 for int
 
@@ -411,6 +402,14 @@ enum RTP_CTX_CONFIGURATION_FLAGS {
     * By default SSRC is generated randomly
     */
     RCC_SSRC = 10,
+
+    /**
+     * @brief Change ECN aggregation time window (default 10 ms)
+     * @n - Counts all packets arriving packets
+     * @n - Counts all packets with ECN-CE
+     * @details Time window in milliseconds to count ECN-CE marked packets (default 10 ms)
+    */
+    RCC_ECN_AGGREGATION_TIME_WINDOW    = 11,
 
     /// \cond DO_NOT_DOCUMENT
     RCC_LAST

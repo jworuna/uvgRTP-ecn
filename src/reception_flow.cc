@@ -98,12 +98,20 @@ void uvgrtp::reception_flow::set_payload_size(const size_t& value)
     create_ring_buffer();
 }
 
+void uvgrtp::reception_flow::set_ecn_aggregation_time_window(unsigned long time_window_in_ms)
+{
+    ecn_aggregation_time_window_ = time_window_in_ms;
+}
+
 rtp_error_t uvgrtp::reception_flow::start(std::shared_ptr<uvgrtp::socket> socket, int rce_flags)
 {
     should_stop_ = false;
     receive_ecn_ = false;
     if ((rce_flags & RCE_ECN_TRAFFIC))
+    {
         receive_ecn_ = true;
+        ecn_aggregation_time_window_ = 10;
+    }
 
     UVG_LOG_DEBUG("Creating receiving threads and setting priorities");
     processor_ = std::unique_ptr<std::thread>(new std::thread(&uvgrtp::reception_flow::process_packet, this, rce_flags));

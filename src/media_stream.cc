@@ -679,6 +679,16 @@ rtp_error_t uvgrtp::media_stream::configure_ctx(int rcc_flag, ssize_t value)
             *ssrc_ = (uint32_t)value;
             break;
         }
+        case RCC_ECN_AGGREGATION_TIME_WINDOW:
+        {
+            if (value <= 0) {
+                UVG_LOG_ERROR("RCC_ECN_AGGREGATION_TIME_WINDOW must be greater 0!");
+                return RTP_INVALID_VALUE;
+            }
+
+            reception_flow_->set_ecn_aggregation_time_window(value);
+            break;
+        }
         default:
             return RTP_INVALID_VALUE;
     }

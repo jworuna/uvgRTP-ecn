@@ -149,6 +149,14 @@ namespace uvgrtp {
             void set_buffer_size(const ssize_t& value);
             void set_payload_size(const size_t& value);
 
+            /**
+             * @brief Set ECN aggregation time window in milliseconds
+             * @param time_window_in_ms
+             * @details Counts all packets with or without ECN-CE within this time window and
+             * will handover this information to an RTCP report.
+             */
+            void set_ecn_aggregation_time_window(unsigned long time_window_in_ms);
+
         private:
             /* RTP packet receiver thread */
             void receiver(std::shared_ptr<uvgrtp::socket> socket);
@@ -184,6 +192,7 @@ namespace uvgrtp {
 
             bool should_stop_;
             bool receive_ecn_;
+            unsigned int ecn_aggregation_time_window_;
 
             std::unique_ptr<std::thread> receiver_;
             std::unique_ptr<std::thread> processor_;
