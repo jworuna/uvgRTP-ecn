@@ -24,6 +24,19 @@ namespace uvgrtp {
     typedef rtp_error_t (*packet_handler_aux)(void *, int, uvgrtp::frame::rtp_frame **);
     typedef rtp_error_t (*frame_getter)(void *, uvgrtp::frame::rtp_frame **);
 
+    /**
+     * @brief handler definition for ecn reports
+     * void * must be rtcp instance
+     * uint32_t (ssrc), int(ECN-Bit)
+     */
+    typedef rtp_error_t (*ecn_handler_aux)(void *, uint32_t , int);
+
+    struct enc_handler
+    {
+        void *arg = nullptr;
+        ecn_handler_aux handler = nullptr;
+    };
+
     struct auxiliary_handler {
         void *arg = nullptr;
         packet_handler_aux handler = nullptr;
@@ -39,6 +52,7 @@ namespace uvgrtp {
         packet_handler primary = nullptr;
         std::vector<auxiliary_handler> auxiliary;
         std::vector<auxiliary_handler_cpp> auxiliary_cpp;
+        enc_handler enc_handler;
     };
 
     /* This class handles the reception processing of received RTP packets. It 
@@ -113,7 +127,7 @@ namespace uvgrtp {
              * Return RTP_INVALID_VALUE if "handler" is nullptr or if "key" is not valid */
             rtp_error_t install_aux_handler(uint32_t key, void *arg, packet_handler_aux handler, frame_getter getter);
 
-            rtp_error_t install_aux_handler_cpp(uint32_t key, 
+            rtp_error_t install_aux_handler_cpp(uint32_t key,
                 std::function<rtp_error_t(int, uvgrtp::frame::rtp_frame**)> handler,
                 std::function<rtp_error_t(uvgrtp::frame::rtp_frame**)> getter);
 
@@ -149,13 +163,7 @@ namespace uvgrtp {
             void set_buffer_size(const ssize_t& value);
             void set_payload_size(const size_t& value);
 
-            /**
-             * @brief Set ECN aggregation time window in milliseconds
-             * @param time_window_in_ms
-             * @details Counts all packets with or without ECN-CE within this time window and
-             * will handover this information to an RTCP report.
-             */
-            void set_ecn_aggregation_time_window(unsigned long time_window_in_ms);
+            rtp_error_t install_ecn_handler(uint32_t key, void *arg, ecn_handler_aux handler);
 
         private:
             /* RTP packet receiver thread */
@@ -169,6 +177,9 @@ namespace uvgrtp {
 
             /* Call auxiliary handlers of a primary handler */
             void call_aux_handlers(uint32_t key, int rce_flags, uvgrtp::frame::rtp_frame **frame);
+
+            /* Call ecn handlers of a primary handler */
+            void call_ecn_handlers(uint32_t key, uint32_t ssrc, int ecn_bit);
 
             inline void increase_buffer_size(ssize_t next_write_index);
 
@@ -200,6 +211,7 @@ namespace uvgrtp {
             struct Buffer
             {
                 uint8_t* data;
+                int ecn_bit;
                 int read;
             };
 

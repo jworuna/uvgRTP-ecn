@@ -277,6 +277,9 @@ rtp_error_t uvgrtp::media_stream::init()
     rtp_handler_key_ = reception_flow_->install_handler(rtp_->packet_handler);
     reception_flow_->install_aux_handler(rtp_handler_key_, rtcp_.get(), rtcp_->recv_packet_handler, nullptr);
 
+    if ((rce_flags_ & RCE_ECN_TRAFFIC))
+        reception_flow_->install_ecn_handler(rtp_handler_key_, rtcp_.get(), rtcp_->recv_ecn_handler);
+
     return start_components();
 }
 
@@ -686,7 +689,7 @@ rtp_error_t uvgrtp::media_stream::configure_ctx(int rcc_flag, ssize_t value)
                 return RTP_INVALID_VALUE;
             }
 
-            reception_flow_->set_ecn_aggregation_time_window(value);
+            rtcp_->set_ecn_aggregation_time_window((unsigned long)value);
             break;
         }
         default:

@@ -98,11 +98,6 @@ void uvgrtp::reception_flow::set_payload_size(const size_t& value)
     create_ring_buffer();
 }
 
-void uvgrtp::reception_flow::set_ecn_aggregation_time_window(unsigned long time_window_in_ms)
-{
-    ecn_aggregation_time_window_ = time_window_in_ms;
-}
-
 rtp_error_t uvgrtp::reception_flow::start(std::shared_ptr<uvgrtp::socket> socket, int rce_flags)
 {
     should_stop_ = false;
@@ -260,6 +255,23 @@ rtp_error_t uvgrtp::reception_flow::install_aux_handler_cpp(uint32_t key,
     return RTP_OK;
 }
 
+rtp_error_t uvgrtp::reception_flow::install_ecn_handler(uint32_t key, void *arg, ecn_handler_aux handler)
+{
+    if (!handler)
+        return RTP_INVALID_VALUE;
+
+    if (packet_handlers_.find(key) == packet_handlers_.end())
+        return RTP_INVALID_VALUE;
+
+    enc_handler eh;
+    eh.arg = arg;
+    eh.handler = handler;
+
+    packet_handlers_[key].enc_handler = eh;
+
+    return RTP_OK;
+}
+
 void uvgrtp::reception_flow::return_frame(uvgrtp::frame::rtp_frame *frame)
 {
     if (recv_hook_) {
@@ -356,6 +368,11 @@ void uvgrtp::reception_flow::call_aux_handlers(uint32_t key, int rce_flags, uvgr
     }
 }
 
+void uvgrtp::reception_flow::call_ecn_handlers(uint32_t key, uint32_t ssrc, int ecn_bit) {
+    auto& ecn_handler = packet_handlers_[key].enc_handler;
+    ecn_handler.handler(ecn_handler.arg, ssrc, ecn_bit);
+}
+
 void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
 {
     int read_packets = 0;
@@ -410,11 +427,8 @@ void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
                 }
                 else
                 {
-                    int ecn_bit;
                     ret = socket->recvfrom(ring_buffer_[next_write_index].data, payload_size_,
-                                           MSG_DONTWAIT, &ring_buffer_[next_write_index].read, ecn_bit);
-
-                    //TODO: Read ecn works. Need to count based on time window and handover to rtcp
+                                           MSG_DONTWAIT, &ring_buffer_[next_write_index].read, ring_buffer_[next_write_index].ecn_bit);
                 }
 
                 if (ret == RTP_INTERRUPTED)
@@ -501,6 +515,7 @@ void uvgrtp::reception_flow::process_packet(int rce_flags)
                         case RTP_PKT_MODIFIED:
                         {
                             call_aux_handlers(handler.first, rce_flags, &frame);
+                            call_ecn_handlers(handler.first, frame->header.ssrc, ring_buffer_[ring_read_index_].ecn_bit);
                             break;
                         }
                         case RTP_GENERIC_ERROR:

@@ -420,6 +420,9 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_
     p->address          = p->socket->create_sockaddr(AF_INET, dst_addr, dst_port);
     p->stats.clock_rate = clock_rate;
 
+    /* Init ECN statistics only need for receiver */
+    zero_stats(&p->receiver_ecn_stats);
+
     sockets_.push_back(p->socket);
     initial_participants_.push_back(std::move(p));
 
@@ -795,6 +798,12 @@ void uvgrtp::rtcp::zero_stats(uvgrtp::receiver_statistics *stats)
     stats->base_seq = 0;
     stats->bad_seq  = 0;
     stats->cycles   = 0;
+}
+
+void uvgrtp::rtcp::zero_stats(uvgrtp::ecn_statistics *stats) {
+    stats->ext_highest_seq_num = 0;
+    stats->packet_count_tw = 0;
+    stats->ect_ce_count_tw = 0;
 }
 
 bool uvgrtp::rtcp::is_participant(uint32_t ssrc) const
@@ -1888,4 +1897,36 @@ void uvgrtp::rtcp::set_session_bandwidth(uint32_t kbps)
 void uvgrtp::rtcp::set_payload_size(size_t mtu_size)
 {
     mtu_size_ = mtu_size;
+}
+
+void uvgrtp::rtcp::set_ecn_aggregation_time_window(unsigned long time_window_in_ms)
+{
+    ecn_aggregation_time_window_ = time_window_in_ms;
+}
+
+rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uint32_t ssrc, int ecn_bit)
+{
+    if (our_role_ == RECEIVER)
+    {
+        if (ecn_bit == ECN_ECT_CE)
+            participants_[ssrc]->receiver_ecn_stats.ect_ce_count_tw++;
+
+        participants_[ssrc]->receiver_ecn_stats.packet_count_tw++;
+
+        return RTP_OK;
+    }
+
+    return RTP_GENERIC_ERROR;
+}
+
+rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit)
+{
+    rtp_error_t result = RTP_OK;
+
+    auto *rtcp = (uvgrtp::rtcp *)arg;
+
+    if (rtcp->is_participant(ssrc))
+        result = rtcp->update_ecn_receiver_statistics(ssrc, ecn_bit);
+
+    return result;
 }

@@ -165,7 +165,7 @@ namespace uvgrtp {
          * @param packet_count_tw all counted packets in the defined time window
          * @param ect_ce_count_tw all counted packets with ECN-CE in the defined time window
          * */
-        struct rtcp_ecn_report_packet {
+        struct rtcp_ecn_packet {
             struct rtcp_header header;
             uint32_t ssrc = 0;
             //uint32_t msrc = 0;

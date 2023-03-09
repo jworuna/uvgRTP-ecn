@@ -28,6 +28,12 @@ namespace uvgrtp {
         SENDER
     };
 
+    struct ecn_statistics {
+        uint32_t ext_highest_seq_num = 0;
+        uint32_t packet_count_tw = 0;
+        uint32_t ect_ce_count_tw = 0;
+    };
+
     struct sender_statistics {
         /* sender stats */
         uint32_t sent_pkts = 0;      /* Number of sent RTP packets */
@@ -74,6 +80,10 @@ namespace uvgrtp {
         uvgrtp::frame::rtcp_receiver_report *rr_frame = nullptr;
         uvgrtp::frame::rtcp_sdes_packet     *sdes_frame = nullptr;
         uvgrtp::frame::rtcp_app_packet      *app_frame = nullptr;
+
+        uvgrtp::frame::rtcp_ecn_packet      *ecn_frame = nullptr;
+        /* ECN Statistics for receiver to sum up ecn related stats to create a RTCP report */
+        struct ecn_statistics receiver_ecn_stats;
     };
 
     struct rtcp_app_packet {
@@ -373,10 +383,16 @@ namespace uvgrtp {
             /* Update RTCP-related sender statistics */
             static rtp_error_t send_packet_handler_vec(void *arg, uvgrtp::buf_vec& buffers);
 
+            /* Update RTCP-ECN-related receiver statistics */
+            static rtp_error_t recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit);
+
             // the length field is the rtcp packet size measured in 32-bit words - 1
             size_t rtcp_length_in_bytes(uint16_t length);
 
             void set_payload_size(size_t mtu_size);
+
+            /* Set ECN aggregation time window in milliseconds */
+            void set_ecn_aggregation_time_window(unsigned long time_window_in_ms);
             /// \endcond
 
         private:
@@ -443,6 +459,8 @@ namespace uvgrtp {
              * packet-related statistics should not be updated */
             rtp_error_t update_participant_seq(uint32_t ssrc, uint16_t seq);
 
+            rtp_error_t update_ecn_receiver_statistics(uint32_t ssrc, int ecn_bit);
+
             /* Update the RTCP bandwidth variables
              *
              * "pkt_size" tells how much rtcp_byte_count_
@@ -455,6 +473,8 @@ namespace uvgrtp {
             void zero_stats(uvgrtp::sender_statistics *stats);
 
             void zero_stats(uvgrtp::receiver_statistics *stats);
+
+            void zero_stats(uvgrtp::ecn_statistics *stats);
 
             /* Takes ownership of the frame */
             rtp_error_t send_rtcp_packet_to_participants(uint8_t* frame, uint32_t frame_size, bool encrypt);
@@ -582,6 +602,8 @@ namespace uvgrtp {
             char cname_[255];
 
             size_t mtu_size_;
+
+            unsigned int ecn_aggregation_time_window_;
     };
 }
 
