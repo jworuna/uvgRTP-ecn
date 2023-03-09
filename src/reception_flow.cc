@@ -370,7 +370,8 @@ void uvgrtp::reception_flow::call_aux_handlers(uint32_t key, int rce_flags, uvgr
 
 void uvgrtp::reception_flow::call_ecn_handlers(uint32_t key, uint32_t ssrc, int ecn_bit) {
     auto& ecn_handler = packet_handlers_[key].enc_handler;
-    ecn_handler.handler(ecn_handler.arg, ssrc, ecn_bit);
+    if (ecn_handler.handler != nullptr && ecn_handler.arg != nullptr)
+        ecn_handler.handler(ecn_handler.arg, ssrc, ecn_bit);
 }
 
 void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
