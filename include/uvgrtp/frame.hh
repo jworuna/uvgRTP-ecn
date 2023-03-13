@@ -172,10 +172,10 @@ namespace uvgrtp {
             /**
              * @param packet_count_tw all counted packets in the defined time window
              */
-            uint32_t ext_highest_seq_num = 0;
             uint32_t packet_count_tw = 0;
             uint32_t ect_ce_count_tw = 0;
 
+            //uint32_t ext_highest_seq_num = 0;
             //uint32_t ect_0 = 0;
             //uint32_t ect_1 = 0;
             //uint16_t ect_ce = 0;

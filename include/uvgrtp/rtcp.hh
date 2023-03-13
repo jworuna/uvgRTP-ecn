@@ -137,6 +137,10 @@ namespace uvgrtp {
              * Return RTP_OK on success and RTP_ERROR on error */
             rtp_error_t generate_report();
 
+            /* Generates ECN Report
+             * Return RTP_OK on success and RTP_ERROR on error */
+            rtp_error_t generate_ecn_report();
+
             /* Handle incoming RTCP packet (first make sure it's a valid RTCP packet)
              * This function will call one of the above functions internally
              *
@@ -426,6 +430,7 @@ namespace uvgrtp {
             rtp_error_t handle_app_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
                 uvgrtp::frame::rtcp_header& header);
 
+            static void rtcp_receiver(rtcp *rtcp);
             static void rtcp_runner(rtcp *rtcp, int interval);
 
             /* when we start the RTCP instance, we don't know what the SSRC of the remote is
@@ -581,6 +586,7 @@ namespace uvgrtp {
             mutable std::mutex participants_mutex_;
 
             std::unique_ptr<std::thread> report_generator_;
+            std::unique_ptr<std::thread> report_receiver_;
 
             bool is_active() const
             {
@@ -603,7 +609,7 @@ namespace uvgrtp {
 
             size_t mtu_size_;
 
-            unsigned int ecn_aggregation_time_window_;
+            unsigned int ecn_aggregation_time_window_ms_;
     };
 }
 
