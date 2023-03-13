@@ -259,11 +259,15 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
 
     uvgrtp::clock::hrc::hrc_t start = uvgrtp::clock::hrc::now();
 
-    long long int last_ecn_report = 0;
+    int64_t last_ecn_report = 0;
+    uint32_t ecn_report_interval = rtcp->ecn_aggregation_time_window_ms_;
 
     bool enableEcn = false;
     if (rtcp->our_role_ == RECEIVER && (rtcp->rce_flags_ & RCE_ECN_TRAFFIC))
+    {
+        UVG_LOG_INFO("RTCP ECN instance enabled! ECN interval: %i ms", ecn_report_interval);
         enableEcn = true;
+    }
 
     int i = 0;
     while (rtcp->is_active())
@@ -278,7 +282,7 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
             int64_t current_time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>
                     (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
-            if ((current_time_in_ms - last_ecn_report) >= 100)
+            if ((current_time_in_ms - last_ecn_report) >= ecn_report_interval)
             {
                 ret = rtcp->generate_ecn_report();
                 if (ret == RTP_NOT_FOUND) {

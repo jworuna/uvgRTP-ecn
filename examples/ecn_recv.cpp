@@ -59,7 +59,7 @@ int main(void)
                                                                         RTP_FORMAT_GENERIC, receiverFlags);
 
     // TODO: Test this (WIP)
-    //remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 100);
+    remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 500);
 
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender
