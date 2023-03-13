@@ -35,6 +35,7 @@ constexpr int PACKET_INTERVAL_MS = 1000/FRAME_RATE;
 void receiver_hook(uvgrtp::frame::rtcp_receiver_report *frame);
 void sender_hook(uvgrtp::frame::rtcp_sender_report *frame);
 void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame);
+void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame);
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point& start, int frame_index);
 void cleanup(uvgrtp::context& ctx, uvgrtp::session *local_session, uvgrtp::session *remote_session,
@@ -82,6 +83,13 @@ int main(void)
     if (!remote_stream || remote_stream->get_rtcp()->install_sender_hook(sender_hook) != RTP_OK)
     {
         std::cerr << "Failed to install RTCP sender report hook" << std::endl;
+        cleanup(ctx, local_session, remote_session, local_stream, remote_stream);
+        return EXIT_FAILURE;
+    }
+
+    if (!local_stream || local_stream->get_rtcp()->install_ecn_hook(nullptr, ecn_receiver_hook) != RTP_OK)
+    {
+        std::cerr << "Failed to install ECN report hook" << std::endl;
         cleanup(ctx, local_session, remote_session, local_stream, remote_stream);
         return EXIT_FAILURE;
     }
@@ -189,6 +197,13 @@ void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame)
      *
      * When we're done with the frame, it must be deallocated manually */
     (void)uvgrtp::frame::dealloc_frame(frame);
+}
+
+void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame)
+{
+    printf("ECN Report from: %u, packets: %i, ecn-ce: %i\n", frame->ssrc, frame->packet_count_tw, frame->ect_ce_count_tw);
+
+    delete frame;
 }
 
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::session *remote_session,

@@ -81,7 +81,7 @@ namespace uvgrtp {
         uvgrtp::frame::rtcp_sdes_packet     *sdes_frame = nullptr;
         uvgrtp::frame::rtcp_app_packet      *app_frame = nullptr;
 
-        uvgrtp::frame::rtcp_ecn_packet      *ecn_frame = nullptr;
+        uvgrtp::frame::rtcp_ecn_report      *ecn_frame = nullptr;
         /* ECN Statistics for receiver to sum up ecn related stats to create a RTCP report */
         struct ecn_statistics receiver_ecn_stats;
     };
@@ -206,6 +206,7 @@ namespace uvgrtp {
             uvgrtp::frame::rtcp_receiver_report *get_receiver_packet(uint32_t ssrc);
             uvgrtp::frame::rtcp_sdes_packet     *get_sdes_packet(uint32_t ssrc);
             uvgrtp::frame::rtcp_app_packet      *get_app_packet(uint32_t ssrc);
+            uvgrtp::frame::rtcp_ecn_report      *get_ecn_packet(uint32_t ssrc);
 
             /* Return a reference to vector that contains the sockets of all participants */
             std::vector<std::shared_ptr<uvgrtp::socket>>& get_sockets();
@@ -360,12 +361,38 @@ namespace uvgrtp {
              */
             rtp_error_t install_app_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler);
 
+            /**
+             * \brief Install an RTCP ECN packet hook
+             *
+             * \details This function is called when an RTCP ECN packet is received
+             *
+             * \param arg Optional argument that is passed to the hook when it is called, can be set to nullptr
+             * \param hook Function pointer to the hook
+             *
+             * \retval RTP_OK on success
+             * \retval RTP_INVALID_VALUE If hook is nullptr
+             */
+            rtp_error_t install_ecn_hook(void *arg, void (*hook)(void*, uvgrtp::frame::rtcp_ecn_report *));
+            /**
+             * \brief Install an RTCP ECN packet hook
+             *
+             * \details This function is called when an RTCP ECN packet is received
+             *
+             * \param arg Optional argument that is passed to the hook when it is called, can be set to nullptr
+             * \param app_handler C++ function pointer to the hook
+             *
+             * \retval RTP_OK on success
+             * \retval RTP_INVALID_VALUE If hook is nullptr
+             */
+            rtp_error_t install_ecn_hook(void *arg, std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler);
+
             /// \cond DO_NOT_DOCUMENT
             // These have been replaced by functions with unique_ptr in them
             rtp_error_t install_sender_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler);
             rtp_error_t install_receiver_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_handler);
             rtp_error_t install_sdes_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sdes_packet>)> sdes_handler);
             rtp_error_t install_app_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler);
+            rtp_error_t install_ecn_hook(void *arg, std::function<void(void*, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler);
             /// \endcond
 
             /**
@@ -571,6 +598,8 @@ namespace uvgrtp {
             void (*receiver_hook_)(uvgrtp::frame::rtcp_receiver_report *);
             void (*sdes_hook_)(uvgrtp::frame::rtcp_sdes_packet *);
             void (*app_hook_)(uvgrtp::frame::rtcp_app_packet *);
+            void (*ecn_hook_)(void*, uvgrtp::frame::rtcp_ecn_report *);
+            void *ecn_hook_arg_;
 
             std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_f_;
             std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_u_;
@@ -580,11 +609,14 @@ namespace uvgrtp {
             std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sdes_packet>)>     sdes_hook_u_;
             std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>)>      app_hook_f_;
             std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_app_packet>)>      app_hook_u_;
+            std::function<void(void*, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>)>      ecn_hook_f_;
+            std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)>      ecn_hook_u_;
 
             std::mutex sr_mutex_;
             std::mutex rr_mutex_;
             std::mutex sdes_mutex_;
             std::mutex app_mutex_;
+            std::mutex ecn_mutex_;
             mutable std::mutex participants_mutex_;
 
             std::unique_ptr<std::thread> report_generator_;

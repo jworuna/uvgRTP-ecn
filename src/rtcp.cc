@@ -261,25 +261,33 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
 
     long long int last_ecn_report = 0;
 
+    bool enableEcn = false;
+    if (rtcp->our_role_ == RECEIVER && (rtcp->rce_flags_ & RCE_ECN_TRAFFIC))
+        enableEcn = true;
+
     int i = 0;
     while (rtcp->is_active())
     {
         long int next_sendslot = i * interval;
         uint32_t run_time = (uint32_t)uvgrtp::clock::hrc::diff_now(start);
         long int diff_ms = next_sendslot - run_time;
-        int64_t current_time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>
-                (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
         rtp_error_t ret = RTP_OK;
-        if ((current_time_in_ms - last_ecn_report) >= 100)
+        if (enableEcn)
         {
-            ret = rtcp->generate_ecn_report();
-            if (ret == RTP_NOT_FOUND) {
-                // This means the that we are a sender, senders did not send ECN Reports
-            } else if (ret != RTP_OK && ret != RTP_NOT_READY)
-                UVG_LOG_ERROR("Failed to send RTCP status report!");
+            int64_t current_time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>
+                    (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
-            last_ecn_report = current_time_in_ms;
+            if ((current_time_in_ms - last_ecn_report) >= 100)
+            {
+                ret = rtcp->generate_ecn_report();
+                if (ret == RTP_NOT_FOUND) {
+                    // This means the that we are a sender, senders did not send ECN Reports
+                } else if (ret != RTP_OK && ret != RTP_NOT_READY)
+                    UVG_LOG_ERROR("Failed to send RTCP status report!");
+
+                last_ecn_report = current_time_in_ms;
+            }
         }
 
         if (diff_ms <= 0)
@@ -516,6 +524,13 @@ rtp_error_t uvgrtp::rtcp::remove_all_hooks()
     app_hook_f_ = nullptr;
     app_hook_u_ = nullptr;
     app_mutex_.unlock();
+
+    ecn_mutex_.lock();
+    ecn_hook_   = nullptr;
+    ecn_hook_f_ = nullptr;
+    ecn_hook_u_ = nullptr;
+    ecn_mutex_.unlock();
+
     return RTP_OK;
 }
 
@@ -711,6 +726,61 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
     return RTP_OK;
 }
 
+rtp_error_t uvgrtp::rtcp::install_ecn_hook(void* arg, void (*hook)(void *, uvgrtp::frame::rtcp_ecn_report *))
+{
+    if (!hook)
+    {
+        return RTP_INVALID_VALUE;
+    }
+
+    ecn_mutex_.lock();
+    ecn_hook_arg_ = arg;
+    ecn_hook_   = hook;
+    ecn_hook_f_ = nullptr;
+    ecn_hook_u_ = nullptr;
+    ecn_mutex_.unlock();
+
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::rtcp::install_ecn_hook(
+        void* arg,
+        std::function<void(void*, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler)
+{
+    if (!app_handler)
+    {
+        return RTP_INVALID_VALUE;
+    }
+
+    ecn_mutex_.lock();
+    ecn_hook_arg_ = arg;
+    ecn_hook_   = nullptr;
+    ecn_hook_f_ = app_handler;
+    ecn_hook_u_ = nullptr;
+    ecn_mutex_.unlock();
+
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::rtcp::install_ecn_hook(
+        void* arg,
+        std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler)
+{
+    if (!app_handler)
+    {
+        return RTP_INVALID_VALUE;
+    }
+
+    ecn_mutex_.lock();
+    ecn_hook_arg_ = arg;
+    ecn_hook_   = nullptr;
+    ecn_hook_f_ = nullptr;
+    ecn_hook_u_ = app_handler;
+    ecn_mutex_.unlock();
+
+    return RTP_OK;
+}
+
 uvgrtp::frame::rtcp_sender_report* uvgrtp::rtcp::get_sender_packet(uint32_t ssrc)
 {
     std::lock_guard prtcp_lock(participants_mutex_);
@@ -771,6 +841,22 @@ uvgrtp::frame::rtcp_app_packet* uvgrtp::rtcp::get_app_packet(uint32_t ssrc)
     auto frame = participants_[ssrc]->app_frame;
     participants_[ssrc]->app_frame = nullptr;
     app_mutex_.unlock();
+
+    return frame;
+}
+
+uvgrtp::frame::rtcp_ecn_report* uvgrtp::rtcp::get_ecn_packet(uint32_t ssrc)
+{
+    std::lock_guard prtcp_lock(participants_mutex_);
+    if (participants_.find(ssrc) == participants_.end())
+    {
+        return nullptr;
+    }
+
+    ecn_mutex_.lock();
+    auto frame = participants_[ssrc]->ecn_frame;
+    participants_[ssrc]->ecn_frame = nullptr;
+    ecn_mutex_.unlock();
 
     return frame;
 }
@@ -2011,7 +2097,7 @@ rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit
 rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
                               uvgrtp::frame::rtcp_header& header)
 {
-    auto frame = new uvgrtp::frame::rtcp_ecn_packet;
+    auto frame = new uvgrtp::frame::rtcp_ecn_report;
     frame->header = header;
 
     read_ssrc(buffer, read_ptr, frame->ssrc);
@@ -2025,10 +2111,24 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, s
     participants_[frame->ssrc];
     frame->packet_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr]);
     frame->ect_ce_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr + 4]);
-
-    //TODO: Send to Hook here
-
     participants_mutex_.unlock();
+
+    read_ptr += ECN_REPORT_BLOCK_SIZE;
+
+    ecn_mutex_.lock();
+    if (ecn_hook_) {
+        ecn_hook_(ecn_hook_arg_, frame);
+    } else if (ecn_hook_f_) {
+        ecn_hook_f_(ecn_hook_arg_, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>(frame));
+    } else if (ecn_hook_u_) {
+        ecn_hook_u_(ecn_hook_arg_, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>(frame));
+    } else {
+        std::lock_guard prtcp_lock(participants_mutex_);
+        delete participants_[frame->ssrc]->ecn_frame;
+
+        participants_[frame->ssrc]->ecn_frame = frame;
+    }
+    ecn_mutex_.unlock();
 
     return RTP_OK;
 }
