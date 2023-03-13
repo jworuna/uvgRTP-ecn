@@ -202,13 +202,6 @@ rtp_error_t uvgrtp::rtcp::start()
     report_receiver_.reset(new std::thread(rtcp_receiver, this));
     report_generator_.reset(new std::thread(rtcp_runner, this, interval_ms_));
 
-    /*
-    if (!(rce_flags_ & RCE_ECN_TRAFFIC))
-        report_generator_.reset(new std::thread(rtcp_runner, this, interval_ms_));
-    else
-        report_generator_.reset(new std::thread(ecn_rtcp_runner, this, ecn_aggregation_time_window_ms_));
-    */
-
     return RTP_OK;
 }
 
@@ -278,7 +271,7 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
                 (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
         rtp_error_t ret = RTP_OK;
-        if ((current_time_in_ms - last_ecn_report) >= 10)
+        if ((current_time_in_ms - last_ecn_report) >= 100)
         {
             ret = rtcp->generate_ecn_report();
             if (ret == RTP_NOT_FOUND) {
@@ -1211,7 +1204,7 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
             return RTP_INVALID_VALUE;
         }
 
-        if (header.pkt_type > uvgrtp::frame::RTCP_FT_APP ||
+        if (header.pkt_type > uvgrtp::frame::RTCP_RTP_FB ||
             header.pkt_type < uvgrtp::frame::RTCP_FT_SR)
         {
             UVG_LOG_ERROR("Invalid packet type (%u)!", header.pkt_type);
@@ -1240,6 +1233,10 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
 
             case uvgrtp::frame::RTCP_FT_APP:
                 ret = handle_app_packet(buffer, read_ptr, packet_end, header);
+                break;
+
+            case uvgrtp::frame::RTCP_RTP_FB:
+                ret = handle_ecn_packet(buffer, read_ptr, packet_end, header);
                 break;
 
             default:
@@ -1937,7 +1934,7 @@ void uvgrtp::rtcp::set_payload_size(size_t mtu_size)
     mtu_size_ = mtu_size;
 }
 
-void uvgrtp::rtcp::set_ecn_aggregation_time_window(unsigned long time_window_in_ms)
+void uvgrtp::rtcp::set_ecn_aggregation_time_window(uint32_t time_window_in_ms)
 {
     ecn_aggregation_time_window_ms_ = time_window_in_ms;
 }
@@ -1950,9 +1947,9 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
     std::lock_guard<std::mutex> lock(packet_mutex_);
     rtcp_pkt_sent_count_++;
     std::unique_lock prtcp_lock(participants_mutex_);
-    uint8_t reports = participants_.size();
+    auto reports = participants_.size();
 
-    uint32_t report_size = get_ecn_packet_size(reports);
+    auto report_size = get_ecn_packet_size(reports);
     size_t write_ptr = 0;
     uint32_t ssrc = *ssrc_.get();
 
@@ -2009,4 +2006,29 @@ rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit
         result = rtcp->update_ecn_receiver_statistics(ssrc, ecn_bit);
 
     return result;
+}
+
+rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
+                              uvgrtp::frame::rtcp_header& header)
+{
+    auto frame = new uvgrtp::frame::rtcp_ecn_packet;
+    frame->header = header;
+
+    read_ssrc(buffer, read_ptr, frame->ssrc);
+    if (!is_participant(frame->ssrc))
+    {
+        UVG_LOG_INFO("Got ECN report from unknown participant SSRC %lu, wait until SR will add it", frame->ssrc);
+        return RTP_NOT_FOUND;
+    }
+
+    participants_mutex_.lock();
+    participants_[frame->ssrc];
+    frame->packet_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr]);
+    frame->ect_ce_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr + 4]);
+
+    //TODO: Send to Hook here
+
+    participants_mutex_.unlock();
+
+    return RTP_OK;
 }

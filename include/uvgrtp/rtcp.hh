@@ -396,7 +396,7 @@ namespace uvgrtp {
             void set_payload_size(size_t mtu_size);
 
             /* Set ECN aggregation time window in milliseconds */
-            void set_ecn_aggregation_time_window(unsigned long time_window_in_ms);
+            void set_ecn_aggregation_time_window(uint32_t time_window_in_ms);
             /// \endcond
 
         private:
@@ -429,6 +429,8 @@ namespace uvgrtp {
                 uvgrtp::frame::rtcp_header& header);
             rtp_error_t handle_app_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
                 uvgrtp::frame::rtcp_header& header);
+            rtp_error_t handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
+                                          uvgrtp::frame::rtcp_header& header);
 
             static void rtcp_receiver(rtcp *rtcp);
             static void rtcp_runner(rtcp *rtcp, int interval);
@@ -609,7 +611,7 @@ namespace uvgrtp {
 
             size_t mtu_size_;
 
-            unsigned int ecn_aggregation_time_window_ms_;
+            uint32_t ecn_aggregation_time_window_ms_;
     };
 }
 

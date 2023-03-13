@@ -689,7 +689,7 @@ rtp_error_t uvgrtp::media_stream::configure_ctx(int rcc_flag, ssize_t value)
                 return RTP_INVALID_VALUE;
             }
 
-            rtcp_->set_ecn_aggregation_time_window((unsigned long)value);
+            rtcp_->set_ecn_aggregation_time_window((uint32_t) value);
             break;
         }
         default:
