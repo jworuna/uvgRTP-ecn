@@ -732,6 +732,12 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
 
 rtp_error_t uvgrtp::rtcp::install_ecn_hook(void* arg, void (*hook)(void *, uvgrtp::frame::rtcp_ecn_report *))
 {
+    if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+    {
+        UVG_LOG_ERROR("Can't create ECN report hook RCE_ECN_TRAFFIC not set!");
+        return RTP_GENERIC_ERROR;
+    }
+
     if (!hook)
     {
         return RTP_INVALID_VALUE;
