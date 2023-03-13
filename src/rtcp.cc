@@ -278,15 +278,16 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
                 (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
         rtp_error_t ret = RTP_OK;
-        /*
         if ((current_time_in_ms - last_ecn_report) >= 10)
         {
-            if ((ret = rtcp->generate_ecn_report()) != RTP_OK && ret != RTP_NOT_READY)
+            ret = rtcp->generate_ecn_report();
+            if (ret == RTP_NOT_FOUND) {
+                // This means the that we are a sender, senders did not send ECN Reports
+            } else if (ret != RTP_OK && ret != RTP_NOT_READY)
                 UVG_LOG_ERROR("Failed to send RTCP status report!");
 
             last_ecn_report = current_time_in_ms;
         }
-        */
 
         if (diff_ms <= 0)
         {
@@ -1948,9 +1949,39 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
 
     std::lock_guard<std::mutex> lock(packet_mutex_);
     rtcp_pkt_sent_count_++;
+    std::unique_lock prtcp_lock(participants_mutex_);
+    uint8_t reports = participants_.size();
 
+    uint32_t report_size = get_ecn_packet_size(reports);
+    size_t write_ptr = 0;
+    uint32_t ssrc = *ssrc_.get();
 
-    return RTP_OK;
+    uint8_t* frame = new uint8_t[report_size];
+    memset(frame, 0, report_size);
+
+    if (!construct_rtcp_header(frame, write_ptr, report_size, reports, uvgrtp::frame::RTCP_RTP_FB))
+    {
+        UVG_LOG_ERROR("Failed construct RTCP header.");
+        return RTP_GENERIC_ERROR;
+    }
+
+    for (auto& p : participants_)
+    {
+        uint32_t packet_count_tw = p.second->receiver_ecn_stats.packet_count_tw;
+        uint32_t ect_ce_count_tw = p.second->receiver_ecn_stats.ect_ce_count_tw;
+
+        construct_ecn_report(frame, write_ptr, ssrc, packet_count_tw, ect_ce_count_tw);
+
+        p.second->receiver_ecn_stats.packet_count_tw = 0;
+        p.second->receiver_ecn_stats.ect_ce_count_tw = 0;
+        p.second->receiver_ecn_stats.ext_highest_seq_num = 0;
+    }
+
+    prtcp_lock.unlock();
+
+    UVG_LOG_DEBUG("Sending ECN RTCP report with size, Total size: %lli", report_size);
+
+    return send_rtcp_packet_to_participants(frame, report_size, true);
 }
 
 rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uint32_t ssrc, int ecn_bit)

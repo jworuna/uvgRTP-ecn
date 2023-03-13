@@ -12,12 +12,14 @@ namespace uvgrtp
     const uint16_t SENDER_INFO_SIZE = 20;
     const uint16_t REPORT_BLOCK_SIZE = 24;
     const uint16_t APP_NAME_SIZE = 4;
+    const uint16_t ECN_REPORT_BLOCK_SIZE = 8;
 
     uint32_t get_sr_packet_size(int rce_flags, uint16_t reports);
     uint32_t get_rr_packet_size(int rce_flags, uint16_t reports);
     uint32_t get_sdes_packet_size(const std::vector<uvgrtp::frame::rtcp_sdes_item>& items);
     uint32_t get_app_packet_size(uint32_t payload_len);
     uint32_t get_bye_packet_size(const std::vector<uint32_t>& ssrcs);
+    uint32_t get_ecn_packet_size(uint16_t reports);
 
     // Add the RTCP header
     bool construct_rtcp_header(uint8_t* frame, size_t& ptr, size_t packet_size,
@@ -44,4 +46,9 @@ namespace uvgrtp
 
     // Add BYE ssrcs, should probably be removed
     bool construct_bye_packet(uint8_t* frame, size_t& ptr, const std::vector<uint32_t>& ssrcs);
+
+    // ECN Report
+    bool construct_ecn_report(uint8_t* frame, size_t& ptr, uint32_t ssrc,
+                              uint32_t packet_count_tw,
+                              uint32_t ect_ce_count_tw);
 }
