@@ -2043,7 +2043,7 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
     std::lock_guard<std::mutex> lock(packet_mutex_);
     rtcp_pkt_sent_count_++;
     std::unique_lock prtcp_lock(participants_mutex_);
-    auto reports = participants_.size();
+    auto reports = (uint16_t) participants_.size();
 
     auto report_size = get_ecn_packet_size(reports);
     size_t write_ptr = 0;
@@ -2116,6 +2116,9 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, s
         UVG_LOG_INFO("Got ECN report from unknown participant SSRC %lu, wait until SR will add it", frame->ssrc);
         return RTP_NOT_FOUND;
     }
+
+    if (packet_end > read_ptr + ECN_REPORT_BLOCK_SIZE)
+        UVG_LOG_WARN("Multiple ECN reports, TODO: Have to handle it!");
 
     participants_mutex_.lock();
     participants_[frame->ssrc];

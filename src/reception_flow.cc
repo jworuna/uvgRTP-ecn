@@ -65,7 +65,7 @@ void uvgrtp::reception_flow::create_ring_buffer()
         uint8_t* data = new uint8_t[payload_size_];
         if (data)
         {
-            ring_buffer_.push_back({data, 0});
+            ring_buffer_.push_back({data, 0, 0});
         }
         else
         {
@@ -263,11 +263,11 @@ rtp_error_t uvgrtp::reception_flow::install_ecn_handler(uint32_t key, void *arg,
     if (packet_handlers_.find(key) == packet_handlers_.end())
         return RTP_INVALID_VALUE;
 
-    enc_handler eh;
+    ecn_handler eh;
     eh.arg = arg;
     eh.handler = handler;
 
-    packet_handlers_[key].enc_handler = eh;
+    packet_handlers_[key].ecn = eh;
 
     return RTP_OK;
 }
@@ -369,7 +369,7 @@ void uvgrtp::reception_flow::call_aux_handlers(uint32_t key, int rce_flags, uvgr
 }
 
 void uvgrtp::reception_flow::call_ecn_handlers(uint32_t key, uint32_t ssrc, int ecn_bit) {
-    auto& ecn_handler = packet_handlers_[key].enc_handler;
+    auto& ecn_handler = packet_handlers_[key].ecn;
     if (ecn_handler.handler != nullptr && ecn_handler.arg != nullptr)
         ecn_handler.handler(ecn_handler.arg, ssrc, ecn_bit);
 }
@@ -584,7 +584,7 @@ void uvgrtp::reception_flow::increase_buffer_size(ssize_t next_write_index)
             ring_buffer_.size(), ring_buffer_.size() + increase);
         for (unsigned int i = 0; i < increase; ++i)
         {
-            ring_buffer_.insert(ring_buffer_.begin() + next_write_index, { new uint8_t[payload_size_] , -1 });
+            ring_buffer_.insert(ring_buffer_.begin() + next_write_index, { new uint8_t[payload_size_] , 0, -1 });
         }
 
         // this works, because we have just added increase amount of spaces

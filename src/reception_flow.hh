@@ -31,7 +31,7 @@ namespace uvgrtp {
      */
     typedef rtp_error_t (*ecn_handler_aux)(void *, uint32_t , int);
 
-    struct enc_handler
+    struct ecn_handler
     {
         void *arg = nullptr;
         ecn_handler_aux handler = nullptr;
@@ -52,7 +52,7 @@ namespace uvgrtp {
         packet_handler primary = nullptr;
         std::vector<auxiliary_handler> auxiliary;
         std::vector<auxiliary_handler_cpp> auxiliary_cpp;
-        enc_handler enc_handler;
+        ecn_handler ecn;
     };
 
     /* This class handles the reception processing of received RTP packets. It 
