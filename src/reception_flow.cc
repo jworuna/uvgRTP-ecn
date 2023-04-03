@@ -497,10 +497,16 @@ void uvgrtp::reception_flow::process_packet(int rce_flags)
                 for (auto& handler : packet_handlers_) {
                     uvgrtp::frame::rtp_frame* frame = nullptr;
 
+                    ret = (*handler.second.primary)(ring_buffer_[ring_read_index_].read,
+                                                    ring_buffer_[ring_read_index_].data,
+                                                    rce_flags,
+                                                    &frame);
+
+                    call_ecn_handlers(handler.first, frame->header.ssrc, ring_buffer_[ring_read_index_].ecn_bit);
+
                     // Here we don't lock ring mutex because the chaging is only done above. 
                     // NOTE: If there is a need for multiple processing threads, the read should be guarded
-                    switch ((ret = (*handler.second.primary)(ring_buffer_[ring_read_index_].read,
-                        ring_buffer_[ring_read_index_].data, rce_flags, &frame))) {
+                    switch (ret) {
                         case RTP_OK:
                         {
                             // packet was handled successfully
@@ -516,7 +522,6 @@ void uvgrtp::reception_flow::process_packet(int rce_flags)
                         case RTP_PKT_MODIFIED:
                         {
                             call_aux_handlers(handler.first, rce_flags, &frame);
-                            call_ecn_handlers(handler.first, frame->header.ssrc, ring_buffer_[ring_read_index_].ecn_bit);
                             break;
                         }
                         case RTP_GENERIC_ERROR:
