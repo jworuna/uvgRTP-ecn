@@ -125,7 +125,9 @@ rtp_error_t uvgrtp::poll::poll(std::vector<std::shared_ptr<uvgrtp::socket>>& soc
     }
 
     for (size_t i = 0; i < sockets.size(); ++i) {
-        auto rtp_ret = sockets.at(i)->recv((uint8_t *)buf, (int)buf_len, 0, bytes_read);
+        //auto rtp_ret = sockets.at(i)->recv((uint8_t *)buf, (int)buf_len, 0, bytes_read);
+        sockaddr_in remote_addr = {};
+        auto rtp_ret = sockets.at(i)->recvfrom((uint8_t *)buf, (int)buf_len, 0, &remote_addr, bytes_read);
 
         if (rtp_ret != RTP_OK) {
             if (WSAGetLastError() == WSAEWOULDBLOCK)

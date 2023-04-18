@@ -674,6 +674,13 @@ rtp_error_t uvgrtp::socket::__recvfrom(uint8_t *buf, size_t buf_len, int recv_fl
 
     int rc = ::WSARecvFrom(socket_, &DataBuf, 1, &bytes_received, &d_recv_flags, (SOCKADDR *)sender, (int *)len_ptr, NULL, NULL);
 
+    if (len_ptr != nullptr)
+    {
+        remote_address_.sin_family = sender->sin_family;
+        remote_address_.sin_port = sender->sin_port;
+        remote_address_.sin_addr = sender->sin_addr;
+    }
+
     if (WSAGetLastError() == WSAEWOULDBLOCK)
         return RTP_INTERRUPTED;
 

@@ -16,6 +16,8 @@
 
 #ifndef _WIN32
 #include <sys/time.h>
+#else
+#include <WS2tcpip.h>
 #endif
 
 #include <cassert>
@@ -383,6 +385,147 @@ rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_s
     return RTP_OK;
 }
 
+rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants()
+{
+    //Iterate initial_participants
+    for (int i = 0; i < initial_participants_.size(); ++i) {
+        // Send only
+        if (initial_participants_.at(i)->role == SENDER)
+        {
+            auto sender_addr = initial_participants_.at(i)->address;
+            char *addr = new char [INET_ADDRSTRLEN];
+            auto port = htons(sender_addr.sin_port);
+            inet_ntop(AF_INET, &sender_addr.sin_addr, addr, INET_ADDRSTRLEN);
+            UVG_LOG_INFO("We need to send init packet from: %s:%d", addr, port);
+
+            uint32_t ssrc = *ssrc_.get();
+            auto * message = "INIT";
+            auto size = (uint32_t) strlen(message);
+
+            rtcp_app_packet next_packet { "UVG", 7, size, (uint8_t*) message };
+            uint8_t secondField = (next_packet.subtype & 0x1f);
+            uint32_t packet_size = get_app_packet_size(next_packet.payload_len);
+
+            uint8_t* frame = new uint8_t[packet_size];
+            memset(frame, 0, packet_size);
+            size_t write_ptr = 0;
+
+            if (!construct_rtcp_header(frame, write_ptr, packet_size, secondField,
+                                       uvgrtp::frame::RTCP_FT_APP) ||
+                !construct_ssrc(frame, write_ptr, ssrc) ||
+                !construct_app_packet(frame, write_ptr, next_packet.name, next_packet.payload, next_packet.payload_len))
+            {
+                UVG_LOG_ERROR("Failed to construct APP packet");
+                delete[] frame;
+                return RTP_GENERIC_ERROR;
+            }
+
+            rtp_error_t ret;
+
+            if (initial_participants_.at(i)->socket != nullptr)
+            {
+                if ((ret = initial_participants_.at(i)->socket->sendto(initial_participants_.at(i)->address, frame, packet_size, 0)) != RTP_OK)
+                {
+                    UVG_LOG_ERROR("Sending rtcp packet with sendto() failed!");
+                    break;
+                }
+            }
+            else
+            {
+                UVG_LOG_ERROR("Tried to send RTCP packet when socket does not exist!");
+            }
+
+            delete[] frame;
+        }
+    }
+
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, uint16_t src_port, uint32_t clock_rate)
+{
+    rtp_error_t ret;
+
+    std::unique_ptr<rtcp_participant> p = std::unique_ptr<rtcp_participant>(new rtcp_participant());
+    zero_stats(&p->stats);
+    p->socket = std::shared_ptr<uvgrtp::socket> (new uvgrtp::socket(0));
+    if ((ret = p->socket->init(AF_INET, SOCK_DGRAM, 0)) != RTP_OK)
+    {
+        free_participant(std::move(p));
+        return ret;
+    }
+
+    int enable = 1;
+
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(int))) != RTP_OK)
+    {
+        free_participant(std::move(p));
+        return ret;
+    }
+
+#ifdef _WIN32
+    /* Make the socket non-blocking */
+    int enabled = 1;
+
+    if (::ioctlsocket(p->socket->get_raw_socket(), FIONBIO, (u_long *)&enabled) < 0)
+    {
+        UVG_LOG_ERROR("Failed to make the socket non-blocking!");
+    }
+#endif
+
+    /* Set read timeout (5s for now)
+     *
+     * This means that the socket is listened for 5s at a time and after the timeout,
+     * Send Report is sent to all participants */
+    struct timeval tv;
+    tv.tv_sec = 3;
+    tv.tv_usec = 0;
+
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) != RTP_OK)
+    {
+        free_participant(std::move(p));
+        return ret;
+    }
+
+    if (src_addr != "" && !(rce_flags_ & RCE_SEND_ONLY))
+    {
+        UVG_LOG_INFO("Binding RTCP to port %s:%d", src_addr.c_str(), src_port);
+        sockaddr_in bind_addr = p->socket->create_sockaddr(AF_INET, src_addr, src_port);
+        if ((ret = p->socket->bind(bind_addr)) != RTP_OK)
+        {
+            free_participant(std::move(p));
+            return ret;
+        }
+    }
+    else
+    {
+        if ((ret = p->socket->bind(AF_INET, INADDR_ANY, src_port)) != RTP_OK)
+        {
+            free_participant(std::move(p));
+            return ret;
+        }
+    }
+
+    if (rce_flags_ & RCE_RECEIVE_ONLY)
+    {
+        p->role = RECEIVER;
+    }
+    else
+    {
+        p->role = SENDER;
+        p->address = p->socket->create_sockaddr(AF_INET, src_addr, src_port);
+    }
+    p->stats.clock_rate = clock_rate;
+
+    /* Init ECN statistics only need for receiver */
+    zero_stats(&p->receiver_ecn_stats);
+
+    sockets_.push_back(p->socket);
+    initial_participants_.push_back(std::move(p));
+
+    return RTP_OK;
+}
+
 rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_addr, uint16_t dst_port, uint16_t src_port, uint32_t clock_rate)
 {
     if (dst_addr == "" || !dst_port || !src_port)
@@ -459,7 +602,11 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_
         }
     }
 
-    p->role             = RECEIVER;
+    if (rce_flags_ & RCE_SEND_ONLY)
+        p->role             = SENDER;
+    else
+        p->role             = RECEIVER;
+
     p->address          = p->socket->create_sockaddr(AF_INET, dst_addr, dst_port);
     p->stats.clock_rate = clock_rate;
 
@@ -498,6 +645,21 @@ rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
     participants_[ssrc]->sr_frame    = nullptr;
     participants_[ssrc]->sdes_frame  = nullptr;
     participants_[ssrc]->app_frame   = nullptr;
+    participants_[ssrc]->ecn_frame   = nullptr;
+
+    if (rce_flags_ & RCE_RECEIVE_ONLY)
+    {
+        auto remote_addr = participants_[ssrc]->socket->get_out_address();
+        memcpy(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr));
+        if (memcmp(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr)) == 0)
+        {
+            char *addr = new char [INET_ADDRSTRLEN];
+            auto port = htons(participants_[ssrc]->address.sin_port);
+            inet_ntop(AF_INET, &participants_[ssrc]->address.sin_addr, addr, INET_ADDRSTRLEN);
+            UVG_LOG_INFO("RCE_RECEIVE_ONLY -> Add ssrc: %u -> IP: %s:%d", ssrc, addr, port);
+        }
+    }
+
     participants_mutex_.unlock();
 
     return RTP_OK;
@@ -1627,16 +1789,31 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
     frame->header = header;
     read_ssrc(packet, read_ptr, frame->ssrc);
 
-    /* Deallocate previous frame from the buffer if it exists, it's going to get overwritten */
-    if (!is_participant(frame->ssrc))
-    {
-        UVG_LOG_WARN("Got an APP packet from an unknown participant");
-        add_participant(frame->ssrc);
-    }
+    uint32_t own_ssrc = *ssrc_.get();
 
     // copy app name and application-dependent data from network packet to RTCP structures
     memcpy(frame->name, &packet[read_ptr], APP_NAME_SIZE);
     read_ptr += APP_NAME_SIZE;
+
+    if (strcmp((char*) frame->name, "UVG") == 0)
+    {
+        return RTP_OK;
+    }
+
+    if (frame->ssrc == own_ssrc)
+    {
+        UVG_LOG_WARN("It's our own SSRC. This will be ignored!");
+        return RTP_OK;
+    }
+    else
+    {
+        /* Deallocate previous frame from the buffer if it exists, it's going to get overwritten */
+        if (!is_participant(frame->ssrc))
+        {
+            UVG_LOG_WARN("Got an APP packet from an unknown participant");
+            add_participant(frame->ssrc);
+        }
+    }
 
     frame->payload_len = packet_end - read_ptr;
 
@@ -1821,7 +1998,8 @@ rtp_error_t uvgrtp::rtcp::generate_report()
          * In reality it should be provided by user which I think is implemented? */
         if (clock_start_ == 0)
         {
-          clock_start_ = uvgrtp::clock::ntp::now();
+            clock_start_ = uvgrtp::clock::ntp::now();
+            UVG_LOG_INFO("Set clock_start_");
         }
 
         /* TODO: The RTP timestamp should be from an actual RTP packet and NTP timestamp should be the one

@@ -399,8 +399,7 @@ rtp_error_t uvgrtp::media_stream::start_components()
         holepuncher_->start();
     }
 
-    if (rce_flags_ & RCE_RTCP) {
-
+    if ((rce_flags_ & RCE_RTCP) && !((rce_flags_ & RCE_SEND_ONLY) || (rce_flags_ & RCE_RECEIVE_ONLY))) {
         if (remote_address_ == "" ||
             src_port_ == 0 ||
             dst_port_ == 0)
@@ -411,6 +410,34 @@ rtp_error_t uvgrtp::media_stream::start_components()
         {
             rtcp_->add_participant(local_address_, remote_address_, src_port_ + 1, dst_port_ + 1, rtp_->get_clock_rate());
             rtcp_->set_session_bandwidth(get_default_bandwidth_kbps(fmt_));
+            rtcp_->start();
+        }
+    }
+    else if ((rce_flags_ & RCE_RTCP) && (rce_flags_ & RCE_SEND_ONLY) && !(rce_flags_ & RCE_RECEIVE_ONLY))
+    {
+        if (dst_port_ == 0)
+        {
+            UVG_LOG_ERROR("RCE_RTCP -> RCE_SEND_ONLY needs an even source port!");
+        }
+        else
+        {
+            UVG_LOG_INFO("RCE_RTCP -> RCE_SEND_ONLY!");
+            rtcp_->add_participant(remote_address_, dst_port_ + 1, rtp_->get_clock_rate());
+            rtcp_->send_hello_packet_to_receive_only_participants();
+            rtcp_->start();
+        }
+    }
+    else if ((rce_flags_ & RCE_RTCP) && (rce_flags_ & RCE_RECEIVE_ONLY)  && !(rce_flags_ & RCE_SEND_ONLY))
+    {
+        if (local_address_ == "" || src_port_ == 0)
+        {
+            UVG_LOG_ERROR("RCE_RTCP -> RCE_RECEIVE_ONLY needs a source port!");
+        }
+        else
+        {
+            UVG_LOG_INFO("RCE_RTCP -> RCE_RECEIVE_ONLY!");
+            rtcp_->add_participant(local_address_, src_port_ + 1, rtp_->get_clock_rate());
+            //rtcp_->set_session_bandwidth(get_default_bandwidth_kbps(fmt_));
             rtcp_->start();
         }
     }
