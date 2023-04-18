@@ -387,8 +387,10 @@ rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_s
 
 rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants()
 {
+    int init_participants_size = (int)initial_participants_.size();
+
     //Iterate initial_participants
-    for (int i = 0; i < initial_participants_.size(); ++i) {
+    for (int i = 0; i < init_participants_size; ++i) {
         // Send only
         if (initial_participants_.at(i)->role == SENDER)
         {
