@@ -649,7 +649,7 @@ rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
     participants_[ssrc]->app_frame   = nullptr;
     participants_[ssrc]->ecn_frame   = nullptr;
 
-    if (rce_flags_ & RCE_RECEIVE_ONLY)
+    if ((rce_flags_ & RCE_RECEIVE_ONLY) && (rce_flags_ & RCE_RTCP))
     {
         auto remote_addr = participants_[ssrc]->socket->get_out_address();
         memcpy(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr));
