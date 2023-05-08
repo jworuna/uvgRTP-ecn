@@ -45,9 +45,11 @@ int main(int argc, char *argv[])
     uvgrtp::context ctx;
     uvgrtp::session *remote_session = ctx.create_session(senderIp);
 
-    int flags = RCE_RTCP;
+    int flags = RCE_RTCP | RCE_RTCP | RCE_ECN_TRAFFIC;;
     uvgrtp::media_stream *remote_stream = remote_session->create_stream(REMOTE_PORT, LOCAL_PORT,
                                                                         RTP_FORMAT_GENERIC, flags);
+
+    remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 500);
 
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender

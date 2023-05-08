@@ -16,7 +16,7 @@
 constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
-constexpr uint16_t PAYLOAD_LEN = 256;
+constexpr uint16_t PAYLOAD_LEN = 20000;
 constexpr uint16_t FRAME_RATE = 30;
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
@@ -34,6 +34,13 @@ void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int fra
 
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media_stream *send);
 
+void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame)
+{
+    printf("ECN Report from: %u, packets: %i, ecn-ce: %i\n", frame->ssrc, frame->packet_count_tw, frame->ect_ce_count_tw);
+
+    delete frame;
+}
+
 int main(int argc, char *argv[]) {
     std::cout << "Starting uvgRTP RTCP hook example" << std::endl;
     if (argc != 2) {
@@ -46,9 +53,16 @@ int main(int argc, char *argv[]) {
     uvgrtp::context ctx;
     uvgrtp::session *local_session = ctx.create_session(receiverIp);
 
-    int flags = RCE_RTCP;
-    uvgrtp::media_stream *local_stream = local_session->create_stream(LOCAL_PORT, REMOTE_PORT,
-                                                                      RTP_FORMAT_GENERIC, flags);
+    int flags = RCE_RTCP | RCE_RTCP | RCE_ECN_TRAFFIC | RCE_FRAGMENT_GENERIC;
+    uvgrtp::media_stream *sender_stream = local_session->create_stream(LOCAL_PORT, REMOTE_PORT,
+                                                                       RTP_FORMAT_GENERIC, flags);
+
+    if (!sender_stream || sender_stream->get_rtcp()->install_ecn_hook(nullptr, ecn_receiver_hook) != RTP_OK)
+    {
+        std::cerr << "Failed to install ECN report hook" << std::endl;
+        cleanup(ctx, local_session, sender_stream);
+        return EXIT_FAILURE;
+    }
 
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender
@@ -62,13 +76,13 @@ int main(int argc, char *argv[]) {
      * By default, all media_stream that have RTCP enabled start as receivers and only if/when they 
      * call push_frame() are they converted into senders. */
 
-    if (!local_stream || local_stream->get_rtcp()->install_receiver_hook(receiver_hook) != RTP_OK) {
+    if (!sender_stream || sender_stream->get_rtcp()->install_receiver_hook(receiver_hook) != RTP_OK) {
         std::cerr << "Failed to install RTCP receiver report hook" << std::endl;
-        cleanup(ctx, local_session, local_stream);
+        cleanup(ctx, local_session, sender_stream);
         return EXIT_FAILURE;
     }
 
-    if (local_stream) {
+    if (sender_stream) {
         // Send dummy data so there's some RTP data to analyze
         uint8_t buffer[PAYLOAD_LEN] = {0};
         memset(buffer, 'a', PAYLOAD_LEN);
@@ -86,7 +100,7 @@ int main(int argc, char *argv[]) {
                           << " Total data sent: " << (i + 1) * PAYLOAD_LEN << std::endl;
             }
 
-            local_stream->push_frame((uint8_t *) buffer, PAYLOAD_LEN, RTP_NO_FLAGS);
+            sender_stream->push_frame((uint8_t *) buffer, PAYLOAD_LEN, RTP_NO_FLAGS);
 
             // send frames at constant interval to mimic a real camera stream
             wait_until_next_frame(start, i);
@@ -96,7 +110,7 @@ int main(int argc, char *argv[]) {
                   (std::chrono::steady_clock::now() - start).count() / 1000000 << " ms" << std::endl;
     }
 
-    cleanup(ctx, local_session, local_stream);
+    cleanup(ctx, local_session, sender_stream);
     return EXIT_SUCCESS;
 }
 
