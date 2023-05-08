@@ -1,5 +1,8 @@
 project(uvgrtp_examples)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 add_executable(binding)
 add_executable(configuration)
 add_executable(custom_timestamps)
@@ -12,6 +15,8 @@ add_executable(srtp_user)        # SRTP user keys example
 add_executable(srtp_zrtp)        # SRTP + ZRTP example
 add_executable(zrtp_multistream) # ZRTP Multistream example
 add_executable(receiving_ecn)    # ECN example
+add_executable(rtcp_sender)
+add_executable(rtcp_receiver)
 
 # Sources
 target_sources(binding           PRIVATE binding.cc)
@@ -26,6 +31,8 @@ target_sources(srtp_user         PRIVATE srtp_user.cc)
 target_sources(srtp_zrtp         PRIVATE srtp_zrtp.cc)
 target_sources(zrtp_multistream  PRIVATE zrtp_multistream.cc)
 target_sources(receiving_ecn     PRIVATE ecn_recv.cpp)
+target_sources(rtcp_sender       PRIVATE rtcp_sender.cc)
+target_sources(rtcp_receiver     PRIVATE rtcp_receiver.cc)
 
 # set crypto++ to be linked in examples if available
 if (NOT DISABLE_CRYPTO AND CRYPTOPP_FOUND)
@@ -38,15 +45,17 @@ else()
     set(CRYPTOPP_LIB_NAME "")
 endif()
 
-target_link_libraries(binding           PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(configuration     PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(custom_timestamps PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(receiving_hook    PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(receiving_poll    PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(rtcp_hook         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(sending           PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(sending_generic   PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(srtp_user         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(srtp_zrtp         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(zrtp_multistream  PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
-target_link_libraries(receiving_ecn     PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME})
+target_link_libraries(binding           PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(configuration     PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(custom_timestamps PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(receiving_hook    PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(receiving_poll    PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(rtcp_hook         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(sending           PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(sending_generic   PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(srtp_user         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(srtp_zrtp         PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(zrtp_multistream  PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(receiving_ecn     PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(rtcp_sender       PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)
+target_link_libraries(rtcp_receiver     PRIVATE uvgrtp ${CRYPTOPP_LIB_NAME} Threads::Threads)

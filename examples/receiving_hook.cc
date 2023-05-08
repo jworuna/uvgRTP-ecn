@@ -21,24 +21,28 @@
  */
 
 // parameters for this test. You can change these to suit your network environment
-constexpr uint16_t LOCAL_PORT = 8890;
-
-constexpr char LOCAL_ADDRESS[] = "127.0.0.1";
-
 // This example runs for 5 seconds
-constexpr auto RECEIVE_TIME_S = std::chrono::seconds(10);
+constexpr auto RECEIVE_TIME_S = std::chrono::seconds(600);
 
 void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame);
-void cleanup(uvgrtp::context& ctx, uvgrtp::session *sess, uvgrtp::media_stream *receiver);
 
-int main(void)
-{
+void cleanup(uvgrtp::context &ctx, uvgrtp::session *session, uvgrtp::media_stream *receiver);
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        std::cerr << "Usage: <receiverIp> <receiverPort>" << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::string receiverIp = argv[1];
+    int receiverPort = strtol(argv[2], NULL, 10);
+    int senderPort = receiverPort - 1;
     std::cout << "Starting uvgRTP RTP receive hook example" << std::endl;
 
     uvgrtp::context ctx;
-    uvgrtp::session *sess = ctx.create_session(LOCAL_ADDRESS);
-    int flags = RCE_RECEIVE_ONLY;
-    uvgrtp::media_stream *receiver = sess->create_stream(LOCAL_PORT, RTP_FORMAT_H265, flags);
+    uvgrtp::session *sess = ctx.create_session(receiverIp);
+    int flags = RCE_RTCP | RCE_ECN_TRAFFIC;
+    uvgrtp::media_stream *receiver = sess->create_stream(receiverPort, senderPort, RTP_FORMAT_H265, flags);
+    receiver->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 500);
 
     /* Receive hook can be installed and uvgRTP will call this hook when an RTP frame is received
      *
@@ -49,8 +53,7 @@ int main(void)
      * specfic object if the application needs to be called inside the hook
      *
      * If it's not needed, it should be set to nullptr */
-    if (!receiver || receiver->install_receive_hook(nullptr, rtp_receive_hook) != RTP_OK)
-    {
+    if (!receiver || receiver->install_receive_hook(nullptr, rtp_receive_hook) != RTP_OK) {
         std::cerr << "Failed to install RTP reception hook";
         cleanup(ctx, sess, receiver);
         return EXIT_FAILURE;
@@ -65,8 +68,7 @@ int main(void)
     return EXIT_SUCCESS;
 }
 
-void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame)
-{
+void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame) {
     std::cout << "Received RTP frame" << std::endl;
 
     /* Now we own the frame. Here you could give the frame to the application
@@ -75,18 +77,15 @@ void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame)
      * arg->copy_frame(frame) or whatever
      *
      * When we're done with the frame, it must be deallocated manually */
-    (void)uvgrtp::frame::dealloc_frame(frame);
+    (void) uvgrtp::frame::dealloc_frame(frame);
 }
 
-void cleanup(uvgrtp::context& ctx, uvgrtp::session *sess, uvgrtp::media_stream *receiver)
-{
-    if (receiver)
-    {
+void cleanup(uvgrtp::context &ctx, uvgrtp::session *sess, uvgrtp::media_stream *receiver) {
+    if (receiver) {
         sess->destroy_stream(receiver);
     }
 
-    if (sess)
-    {
+    if (sess) {
         /* Session must be destroyed manually */
         ctx.destroy_session(sess);
     }
