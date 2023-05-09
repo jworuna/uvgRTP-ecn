@@ -16,7 +16,7 @@
 constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
-constexpr uint16_t PAYLOAD_LEN = 20000;
+constexpr uint16_t PAYLOAD_LEN = 40000;
 constexpr uint16_t FRAME_RATE = 30;
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
@@ -34,20 +34,24 @@ void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int fra
 
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media_stream *send);
 
-void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame)
-{
-    printf("ECN Report from: %u, packets: %i, ecn-ce: %i\n", frame->ssrc, frame->packet_count_tw, frame->ect_ce_count_tw);
+void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
+    printf("ECN Report from: %u, packets: %i, ecn-ce: %i\n", frame->ssrc, frame->packet_count_tw,
+           frame->ect_ce_count_tw);
 
     delete frame;
 }
 
 int main(int argc, char *argv[]) {
     std::cout << "Starting uvgRTP RTCP hook example" << std::endl;
-    if (argc != 2) {
-        std::cerr << "Usage: <receiverIp>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: <receiverIp> <test duration s>" << std::endl;
         return EXIT_FAILURE;
     }
     std::string receiverIp = argv[1];
+    int testDurationS = strtol(argv[2], NULL, 10);
+
+    std::cout << "Starting RTCP ECN sending example receiverIp " << receiverIp << " test duration s> " << testDurationS
+              << std::endl;
 
     // Creation of RTP stream. See sending example for more details
     uvgrtp::context ctx;
@@ -57,8 +61,7 @@ int main(int argc, char *argv[]) {
     uvgrtp::media_stream *sender_stream = local_session->create_stream(LOCAL_PORT, REMOTE_PORT,
                                                                        RTP_FORMAT_GENERIC, flags);
 
-    if (!sender_stream || sender_stream->get_rtcp()->install_ecn_hook(nullptr, ecn_receiver_hook) != RTP_OK)
-    {
+    if (!sender_stream || sender_stream->get_rtcp()->install_ecn_hook(nullptr, ecn_receiver_hook) != RTP_OK) {
         std::cerr << "Failed to install ECN report hook" << std::endl;
         cleanup(ctx, local_session, sender_stream);
         return EXIT_FAILURE;
@@ -91,9 +94,13 @@ int main(int argc, char *argv[]) {
         memset(buffer + 3, 1, 1);
         memset(buffer + 4, 1, (19 << 1)); // Intra frame
 
+        long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        long endMs = startMs + testDurationS * 1e3;
+        long nowMs = 0;
+        int i = 0;
         std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-
-        for (unsigned int i = 0; i < SEND_TEST_PACKETS; ++i) {
+        while (nowMs < endMs) {
             if ((i + 1) % 10 == 0 || i == 0) // print every 10 frames and first
             {
                 std::cout << "Sending RTP frame " << (i + 1) << "/" << SEND_TEST_PACKETS
@@ -104,10 +111,13 @@ int main(int argc, char *argv[]) {
 
             // send frames at constant interval to mimic a real camera stream
             wait_until_next_frame(start, i);
+
+            nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+            i++;
         }
 
-        std::cout << "Sending finished, total time: " <<
-                  (std::chrono::steady_clock::now() - start).count() / 1000000 << " ms" << std::endl;
+        std::cout << "Sending finished " << std::endl;
     }
 
     cleanup(ctx, local_session, sender_stream);

@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds (60));
+    std::this_thread::sleep_for(std::chrono::seconds (600));
 
     cleanup(ctx,  remote_session,  remote_stream);
     return EXIT_SUCCESS;
