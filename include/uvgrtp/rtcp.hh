@@ -32,6 +32,10 @@ namespace uvgrtp {
         uint32_t ext_highest_seq_num = 0;
         uint32_t packet_count_tw = 0;
         uint32_t ect_ce_count_tw = 0;
+        long startTimeFrameUs = 0;
+        uint32_t lastTs = 0;
+        uint32_t bytesInFrame = 0;
+        uint32_t capacityKbits = 0;
     };
 
     struct sender_statistics {
@@ -419,7 +423,7 @@ namespace uvgrtp {
             static rtp_error_t send_packet_handler_vec(void *arg, uvgrtp::buf_vec& buffers);
 
             /* Update RTCP-ECN-related receiver statistics */
-            static rtp_error_t recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit);
+            static rtp_error_t recv_ecn_handler(void *arg, uvgrtp::frame::rtp_header* header, int ecn_bit);
 
             // the length field is the rtcp packet size measured in 32-bit words - 1
             size_t rtcp_length_in_bytes(uint16_t length);
@@ -497,7 +501,7 @@ namespace uvgrtp {
              * packet-related statistics should not be updated */
             rtp_error_t update_participant_seq(uint32_t ssrc, uint16_t seq);
 
-            rtp_error_t update_ecn_receiver_statistics(uint32_t ssrc, int ecn_bit);
+            rtp_error_t update_ecn_receiver_statistics(uvgrtp::frame::rtp_header* header, int ecn_bit);
 
             /* Update the RTCP bandwidth variables
              *

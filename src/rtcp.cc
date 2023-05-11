@@ -15,7 +15,9 @@
 
 
 #ifndef _WIN32
+
 #include <sys/time.h>
+
 #else
 #include <WS2tcpip.h>
 #endif
@@ -28,10 +30,10 @@
 
 
 /* TODO: explain these constants */
-const uint32_t RTP_SEQ_MOD    = 1 << 16;
+const uint32_t RTP_SEQ_MOD = 1 << 16;
 const uint32_t MIN_SEQUENTIAL = 2;
-const uint32_t MAX_DROPOUT    = 3000;
-const uint32_t MAX_MISORDER   = 100;
+const uint32_t MAX_DROPOUT = 3000;
+const uint32_t MAX_MISORDER = 100;
 const uint32_t DEFAULT_RTCP_INTERVAL_MS = 5000;
 const int MAX_PACKET = 65536;
 
@@ -39,74 +41,68 @@ constexpr int ESTIMATED_MAX_RECEPTION_TIME_MS = 10;
 
 const uint32_t MAX_SUPPORTED_PARTICIPANTS = 31;
 
-uvgrtp::rtcp::rtcp(std::shared_ptr<uvgrtp::rtp> rtp, std::shared_ptr<std::atomic_uint> ssrc, std::string cname, int rce_flags):
-    rce_flags_(rce_flags), our_role_(RECEIVER), 
-    tp_(0), tc_(0), tn_(0), pmembers_(0),
-    members_(0), senders_(0), rtcp_bandwidth_(0),
-    we_sent_(false), avg_rtcp_pkt_pize_(0), rtcp_pkt_count_(0),
-    rtcp_pkt_sent_count_(0), initial_(true), ssrc_(ssrc),
-    num_receivers_(0),
-    sender_hook_(nullptr),
-    receiver_hook_(nullptr),
-    sdes_hook_(nullptr),
-    app_hook_(nullptr),
-    sr_hook_f_(nullptr),
-    sr_hook_u_(nullptr),
-    rr_hook_f_(nullptr),
-    rr_hook_u_(nullptr),
-    sdes_hook_f_(nullptr),
-    sdes_hook_u_(nullptr),
-    app_hook_f_(nullptr),
-    app_hook_u_(nullptr),
-    active_(false),
-    interval_ms_(DEFAULT_RTCP_INTERVAL_MS),
-    ourItems_(),
-    bye_ssrcs_(false),
-    mtu_size_(MAX_IPV4_PAYLOAD)
-{
-    clock_rate_   = rtp->get_clock_rate();
+uvgrtp::rtcp::rtcp(std::shared_ptr<uvgrtp::rtp> rtp, std::shared_ptr<std::atomic_uint> ssrc, std::string cname,
+                   int rce_flags) :
+        rce_flags_(rce_flags), our_role_(RECEIVER),
+        tp_(0), tc_(0), tn_(0), pmembers_(0),
+        members_(0), senders_(0), rtcp_bandwidth_(0),
+        we_sent_(false), avg_rtcp_pkt_pize_(0), rtcp_pkt_count_(0),
+        rtcp_pkt_sent_count_(0), initial_(true), ssrc_(ssrc),
+        num_receivers_(0),
+        sender_hook_(nullptr),
+        receiver_hook_(nullptr),
+        sdes_hook_(nullptr),
+        app_hook_(nullptr),
+        sr_hook_f_(nullptr),
+        sr_hook_u_(nullptr),
+        rr_hook_f_(nullptr),
+        rr_hook_u_(nullptr),
+        sdes_hook_f_(nullptr),
+        sdes_hook_u_(nullptr),
+        app_hook_f_(nullptr),
+        app_hook_u_(nullptr),
+        active_(false),
+        interval_ms_(DEFAULT_RTCP_INTERVAL_MS),
+        ourItems_(),
+        bye_ssrcs_(false),
+        mtu_size_(MAX_IPV4_PAYLOAD) {
+    clock_rate_ = rtp->get_clock_rate();
 
-    clock_start_  = 0;
+    clock_start_ = 0;
     rtp_ts_start_ = 0;
 
-    report_generator_   = nullptr;
-    report_receiver_    = nullptr;
+    report_generator_ = nullptr;
+    report_receiver_ = nullptr;
     ecn_aggregation_time_window_ms_ = 10;
 
-    srtcp_        = nullptr;
+    srtcp_ = nullptr;
 
     zero_stats(&our_stats);
 
-    if (cname.length() > 255)
-    {
+    if (cname.length() > 255) {
         UVG_LOG_ERROR("Our CName is too long");
-    }
-    else
-    {
+    } else {
         // items should not have null termination
-        const char* c = cname.c_str();
+        const char *c = cname.c_str();
         memcpy(cname_, c, cname.length());
-        uint8_t length = (uint8_t)cname.length();
+        uint8_t length = (uint8_t) cname.length();
 
         cnameItem_.type = 1;
         cnameItem_.length = length;
-        cnameItem_.data = (uint8_t*)cname_;
+        cnameItem_.data = (uint8_t *) cname_;
 
         ourItems_.push_back(cnameItem_);
     }
 }
 
 uvgrtp::rtcp::rtcp(std::shared_ptr<uvgrtp::rtp> rtp, std::shared_ptr<std::atomic_uint> ssrc, std::string cname,
-    std::shared_ptr<uvgrtp::srtcp> srtcp, int rce_flags):
-    rtcp(rtp, ssrc, cname, rce_flags)
-{
+                   std::shared_ptr<uvgrtp::srtcp> srtcp, int rce_flags) :
+        rtcp(rtp, ssrc, cname, rce_flags) {
     srtcp_ = srtcp;
 }
 
-uvgrtp::rtcp::~rtcp()
-{
-    if (active_)
-    {
+uvgrtp::rtcp::~rtcp() {
+    if (active_) {
         stop();
     }
 
@@ -116,32 +112,29 @@ uvgrtp::rtcp::~rtcp()
     sockets_.clear();
 }
 
-void uvgrtp::rtcp::cleanup_participants()
-{
+void uvgrtp::rtcp::cleanup_participants() {
     UVG_LOG_DEBUG("Removing all participants");
 
     participants_mutex_.lock();
     /* free all receiver statistic structs */
-    for (auto& participant : participants_)
-    {
+    for (auto &participant: participants_) {
         free_participant(std::move(participant.second));
     }
     participants_.clear();
     participants_mutex_.unlock();
 
-    for (auto& participant : initial_participants_)
-    {
+    for (auto &participant: initial_participants_) {
         free_participant(std::move(participant));
     }
     initial_participants_.clear();
 }
 
-uvgrtp::rtcp_app_packet::rtcp_app_packet(const char* name, uint8_t subtype, uint32_t payload_len, const uint8_t* payload)
-{
-    uint8_t* packet_payload = new uint8_t[payload_len];
+uvgrtp::rtcp_app_packet::rtcp_app_packet(const char *name, uint8_t subtype, uint32_t payload_len,
+                                         const uint8_t *payload) {
+    uint8_t *packet_payload = new uint8_t[payload_len];
     memcpy(packet_payload, payload, payload_len);
 
-    char* packet_name = new char[APP_NAME_SIZE];
+    char *packet_name = new char[APP_NAME_SIZE];
     memcpy(packet_name, name, APP_NAME_SIZE);
 
     this->name = packet_name;
@@ -155,26 +148,19 @@ uvgrtp::rtcp_app_packet::~rtcp_app_packet() {
     delete[] payload;
 }
 
-void uvgrtp::rtcp::free_participant(std::unique_ptr<rtcp_participant> participant)
-{
+void uvgrtp::rtcp::free_participant(std::unique_ptr<rtcp_participant> participant) {
     participant->socket = nullptr;
 
-    if (participant->sr_frame)
-    {
+    if (participant->sr_frame) {
         delete participant->sr_frame;
     }
-    if (participant->rr_frame)
-    {
+    if (participant->rr_frame) {
         delete participant->rr_frame;
     }
-    if (participant->sdes_frame)
-    {
-        for (auto& chunk : participant->sdes_frame->chunks)
-        {
-            for (auto& item : chunk.items)
-            {
-                if (item.data != nullptr)
-                {
+    if (participant->sdes_frame) {
+        for (auto &chunk: participant->sdes_frame->chunks) {
+            for (auto &item: chunk.items) {
+                if (item.data != nullptr) {
                     delete[] item.data;
                 }
             }
@@ -182,20 +168,16 @@ void uvgrtp::rtcp::free_participant(std::unique_ptr<rtcp_participant> participan
 
         delete participant->sdes_frame;
     }
-    if (participant->app_frame)
-    {
-        if (participant->app_frame->payload != nullptr)
-        {
+    if (participant->app_frame) {
+        if (participant->app_frame->payload != nullptr) {
             delete[] participant->app_frame->payload;
         }
         delete participant->app_frame;
     }
 }
 
-rtp_error_t uvgrtp::rtcp::start()
-{
-    if (sockets_.empty())
-    {
+rtp_error_t uvgrtp::rtcp::start() {
+    if (sockets_.empty()) {
         UVG_LOG_ERROR("Cannot start RTCP Runner because no connections have been initialized");
         return RTP_INVALID_VALUE;
     }
@@ -207,49 +189,43 @@ rtp_error_t uvgrtp::rtcp::start()
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::stop()
-{
+rtp_error_t uvgrtp::rtcp::stop() {
     UVG_LOG_DEBUG("Stopping RTCP");
 
     // TODO: Make thread safe. I think this kind of works, but not in a flexible way
-    if (!active_)
-    {
+    if (!active_) {
         cleanup_participants();
         return RTP_OK;
     }
 
     active_ = false;
 
-    if (report_receiver_ && report_receiver_->joinable())
-    {
+    if (report_receiver_ && report_receiver_->joinable()) {
         UVG_LOG_DEBUG("Waiting for RTCP receiver loop to exit");
         report_receiver_->join();
     }
 
-    if (report_generator_ && report_generator_->joinable())
-    {
+    if (report_generator_ && report_generator_->joinable()) {
         UVG_LOG_DEBUG("Waiting for RTCP loop to exit");
         report_generator_->join();
     }
 
     /* when the member count is less than 50,
      * we can just send the BYE message and destroy the session */
-    if (members_ >= 50)
-    {
-        tp_       = tc_;
-        members_  = 1;
+    if (members_ >= 50) {
+        tp_ = tc_;
+        members_ = 1;
         pmembers_ = 1;
-        initial_  = true;
-        we_sent_  = false;
-        senders_  = 0;
+        initial_ = true;
+        we_sent_ = false;
+        senders_ = 0;
     }
 
     /* Send BYE packet with our SSRC to all participants */
-    return uvgrtp::rtcp::send_bye_packet({ *ssrc_.get() });
+    return uvgrtp::rtcp::send_bye_packet({*ssrc_.get()});
 }
 
-void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
-{
+void uvgrtp::rtcp::rtcp_runner(rtcp *rtcp, int interval) {
     UVG_LOG_INFO("RTCP instance created! RTCP interval: %i ms", interval);
 
     // RFC 3550 says to wait half interval before sending first report
@@ -265,27 +241,23 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
     uint32_t ecn_report_interval = rtcp->ecn_aggregation_time_window_ms_;
 
     bool enableEcn = false;
-    if (rtcp->our_role_ == RECEIVER && (rtcp->rce_flags_ & RCE_ECN_TRAFFIC))
-    {
+    if (rtcp->our_role_ == RECEIVER && (rtcp->rce_flags_ & RCE_ECN_TRAFFIC)) {
         UVG_LOG_INFO("RTCP ECN instance enabled! ECN interval: %i ms", ecn_report_interval);
         enableEcn = true;
     }
 
     int i = 0;
-    while (rtcp->is_active())
-    {
+    while (rtcp->is_active()) {
         long int next_sendslot = i * interval;
-        uint32_t run_time = (uint32_t)uvgrtp::clock::hrc::diff_now(start);
+        uint32_t run_time = (uint32_t) uvgrtp::clock::hrc::diff_now(start);
         long int diff_ms = next_sendslot - run_time;
 
         rtp_error_t ret = RTP_OK;
-        if (enableEcn)
-        {
+        if (enableEcn) {
             int64_t current_time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>
                     (uvgrtp::clock::hrc::now().time_since_epoch()).count();
 
-            if ((current_time_in_ms - last_ecn_report) >= ecn_report_interval)
-            {
+            if ((current_time_in_ms - last_ecn_report) >= ecn_report_interval) {
                 ret = rtcp->generate_ecn_report();
                 if (ret == RTP_NOT_FOUND) {
                     // This means the that we are a sender, senders did not send ECN Reports
@@ -296,8 +268,7 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
             }
         }
 
-        if (diff_ms <= 0)
-        {
+        if (diff_ms <= 0) {
             ++i;
 
             UVG_LOG_DEBUG("Sending RTCP report number %i at time slot %i ms", i, next_sendslot);
@@ -310,30 +281,26 @@ void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
     UVG_LOG_DEBUG("Exited RTCP loop");
 }
 
-void uvgrtp::rtcp::rtcp_receiver(rtcp *rtcp)
-{
+void uvgrtp::rtcp::rtcp_receiver(rtcp *rtcp) {
     UVG_LOG_INFO("RTCP receiver instance created!");
 
     std::unique_ptr<uint8_t[]> buffer = std::unique_ptr<uint8_t[]>(new uint8_t[MAX_PACKET]);
 
     rtp_error_t ret;
-    while(rtcp->is_active())
-    {
+    while (rtcp->is_active()) {
         int nread = 0;
         int poll_timout = 5;
 
         // using max poll we make sure that exiting uvgRTP doesn't take several seconds
         int max_poll_timeout_ms = 10;
-        if (poll_timout > max_poll_timeout_ms)
-        {
+        if (poll_timout > max_poll_timeout_ms) {
             poll_timout = max_poll_timeout_ms;
         }
 
         ret = uvgrtp::poll::poll(rtcp->get_sockets(), buffer.get(), MAX_PACKET, poll_timout, &nread);
 
-        if (ret == RTP_OK && nread > 0)
-        {
-            (void)rtcp->handle_incoming_packet(buffer.get(), (size_t)nread);
+        if (ret == RTP_OK && nread > 0) {
+            (void) rtcp->handle_incoming_packet(buffer.get(), (size_t) nread);
         } else if (ret == RTP_INTERRUPTED) {
             /* do nothing */
         } else {
@@ -345,22 +312,17 @@ void uvgrtp::rtcp::rtcp_receiver(rtcp *rtcp)
     UVG_LOG_DEBUG("Exited RTCP receiver loop");
 }
 
-rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_sdes_item>& items)
-{
+rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_sdes_item> &items) {
     bool hasCname = false;
 
     std::set<unsigned int> to_ignore;
 
     // find invalid items and check if cname is already included
-    for (unsigned int i = 0; i < items.size(); ++i)
-    {
-        if (items.at(i).type == 0)
-        {
+    for (unsigned int i = 0; i < items.size(); ++i) {
+        if (items.at(i).type == 0) {
             UVG_LOG_WARN("Invalid item type 0 found at index %lu, removing item", i);
             to_ignore.insert(i);
-        }
-        else if (items.at(i).type == 1)
-        {
+        } else if (items.at(i).type == 1) {
             hasCname = true;
             UVG_LOG_DEBUG("Found CName in sdes items, not adding pregenerated");
             break;
@@ -368,16 +330,13 @@ rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_s
     }
 
     ourItems_.clear();
-    if (!hasCname)
-    {
+    if (!hasCname) {
         ourItems_.push_back(cnameItem_);
     }
 
     // add all items expect ones set for us to ignore
-    for (unsigned int i = 0; i < items.size(); ++i)
-    {
-        if (to_ignore.find(i) == to_ignore.end())
-        {
+    for (unsigned int i = 0; i < items.size(); ++i) {
+        if (to_ignore.find(i) == to_ignore.end()) {
             ourItems_.push_back(items.at(i));
         }
     }
@@ -385,38 +344,36 @@ rtp_error_t uvgrtp::rtcp::set_sdes_items(const std::vector<uvgrtp::frame::rtcp_s
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants()
-{
-    int init_participants_size = (int)initial_participants_.size();
+rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants() {
+    int init_participants_size = (int) initial_participants_.size();
 
     //Iterate initial_participants
     for (int i = 0; i < init_participants_size; ++i) {
         // Send only
-        if (initial_participants_.at(i)->role == SENDER)
-        {
+        if (initial_participants_.at(i)->role == SENDER) {
             auto sender_addr = initial_participants_.at(i)->address;
-            char *addr = new char [INET_ADDRSTRLEN];
+            char *addr = new char[INET_ADDRSTRLEN];
             auto port = htons(sender_addr.sin_port);
             inet_ntop(AF_INET, &sender_addr.sin_addr, addr, INET_ADDRSTRLEN);
             UVG_LOG_INFO("We need to send init packet from: %s:%d", addr, port);
 
             uint32_t ssrc = *ssrc_.get();
-            auto * message = "INIT";
+            auto *message = "INIT";
             auto size = (uint32_t) strlen(message);
 
-            rtcp_app_packet next_packet { "UVG", 7, size, (uint8_t*) message };
+            rtcp_app_packet next_packet{"UVG", 7, size, (uint8_t *) message};
             uint8_t secondField = (next_packet.subtype & 0x1f);
             uint32_t packet_size = get_app_packet_size(next_packet.payload_len);
 
-            uint8_t* frame = new uint8_t[packet_size];
+            uint8_t *frame = new uint8_t[packet_size];
             memset(frame, 0, packet_size);
             size_t write_ptr = 0;
 
             if (!construct_rtcp_header(frame, write_ptr, packet_size, secondField,
                                        uvgrtp::frame::RTCP_FT_APP) ||
                 !construct_ssrc(frame, write_ptr, ssrc) ||
-                !construct_app_packet(frame, write_ptr, next_packet.name, next_packet.payload, next_packet.payload_len))
-            {
+                !construct_app_packet(frame, write_ptr, next_packet.name, next_packet.payload,
+                                      next_packet.payload_len)) {
                 UVG_LOG_ERROR("Failed to construct APP packet");
                 delete[] frame;
                 return RTP_GENERIC_ERROR;
@@ -424,16 +381,13 @@ rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants()
 
             rtp_error_t ret;
 
-            if (initial_participants_.at(i)->socket != nullptr)
-            {
-                if ((ret = initial_participants_.at(i)->socket->sendto(initial_participants_.at(i)->address, frame, packet_size, 0)) != RTP_OK)
-                {
+            if (initial_participants_.at(i)->socket != nullptr) {
+                if ((ret = initial_participants_.at(i)->socket->sendto(initial_participants_.at(i)->address, frame,
+                                                                       packet_size, 0)) != RTP_OK) {
                     UVG_LOG_ERROR("Sending rtcp packet with sendto() failed!");
                     break;
                 }
-            }
-            else
-            {
+            } else {
                 UVG_LOG_ERROR("Tried to send RTCP packet when socket does not exist!");
             }
 
@@ -444,23 +398,20 @@ rtp_error_t uvgrtp::rtcp::send_hello_packet_to_receive_only_participants()
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, uint16_t src_port, uint32_t clock_rate)
-{
+rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, uint16_t src_port, uint32_t clock_rate) {
     rtp_error_t ret;
 
     std::unique_ptr<rtcp_participant> p = std::unique_ptr<rtcp_participant>(new rtcp_participant());
     zero_stats(&p->stats);
-    p->socket = std::shared_ptr<uvgrtp::socket> (new uvgrtp::socket(0));
-    if ((ret = p->socket->init(AF_INET, SOCK_DGRAM, 0)) != RTP_OK)
-    {
+    p->socket = std::shared_ptr<uvgrtp::socket>(new uvgrtp::socket(0));
+    if ((ret = p->socket->init(AF_INET, SOCK_DGRAM, 0)) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
 
     int enable = 1;
 
-    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(int))) != RTP_OK)
-    {
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_REUSEADDR, (const char *) &enable, sizeof(int))) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
@@ -483,37 +434,28 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, uint16_t src_por
     tv.tv_sec = 3;
     tv.tv_usec = 0;
 
-    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) != RTP_OK)
-    {
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
 
-    if (src_addr != "" && !(rce_flags_ & RCE_SEND_ONLY))
-    {
+    if (src_addr != "" && !(rce_flags_ & RCE_SEND_ONLY)) {
         UVG_LOG_INFO("Binding RTCP to port %s:%d", src_addr.c_str(), src_port);
         sockaddr_in bind_addr = p->socket->create_sockaddr(AF_INET, src_addr, src_port);
-        if ((ret = p->socket->bind(bind_addr)) != RTP_OK)
-        {
+        if ((ret = p->socket->bind(bind_addr)) != RTP_OK) {
             free_participant(std::move(p));
             return ret;
         }
-    }
-    else
-    {
-        if ((ret = p->socket->bind(AF_INET, INADDR_ANY, src_port)) != RTP_OK)
-        {
+    } else {
+        if ((ret = p->socket->bind(AF_INET, INADDR_ANY, src_port)) != RTP_OK) {
             free_participant(std::move(p));
             return ret;
         }
     }
 
-    if (rce_flags_ & RCE_RECEIVE_ONLY)
-    {
+    if (rce_flags_ & RCE_RECEIVE_ONLY) {
         p->role = RECEIVER;
-    }
-    else
-    {
+    } else {
         p->role = SENDER;
         p->address = p->socket->create_sockaddr(AF_INET, src_addr, src_port);
     }
@@ -528,12 +470,12 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, uint16_t src_por
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_addr, uint16_t dst_port, uint16_t src_port, uint32_t clock_rate)
-{
-    if (dst_addr == "" || !dst_port || !src_port)
-    {
+rtp_error_t
+uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_addr, uint16_t dst_port, uint16_t src_port,
+                              uint32_t clock_rate) {
+    if (dst_addr == "" || !dst_port || !src_port) {
         UVG_LOG_ERROR("Invalid values given (%s, %d, %d), cannot create RTCP instance",
-                dst_addr.c_str(), dst_port, src_port);
+                      dst_addr.c_str(), dst_port, src_port);
         return RTP_INVALID_VALUE;
     }
 
@@ -542,18 +484,16 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_
 
     zero_stats(&p->stats);
 
-    p->socket = std::shared_ptr<uvgrtp::socket> (new uvgrtp::socket(0));
+    p->socket = std::shared_ptr<uvgrtp::socket>(new uvgrtp::socket(0));
 
-    if ((ret = p->socket->init(AF_INET, SOCK_DGRAM, 0)) != RTP_OK)
-    {
+    if ((ret = p->socket->init(AF_INET, SOCK_DGRAM, 0)) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
 
     int enable = 1;
 
-    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(int))) != RTP_OK)
-    {
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_REUSEADDR, (const char *) &enable, sizeof(int))) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
@@ -576,40 +516,33 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_
     tv.tv_sec = 3;
     tv.tv_usec = 0;
 
-    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) != RTP_OK)
-    {
+    if ((ret = p->socket->setsockopt(SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) != RTP_OK) {
         free_participant(std::move(p));
         return ret;
     }
 
-    
 
-    if (src_addr != "")
-    {
+    if (src_addr != "") {
         UVG_LOG_INFO("Binding RTCP to port %s:%d", src_addr.c_str(), src_port);
         sockaddr_in bind_addr = p->socket->create_sockaddr(AF_INET, src_addr, src_port);
-        if ((ret = p->socket->bind(bind_addr)) != RTP_OK)
-        {
+        if ((ret = p->socket->bind(bind_addr)) != RTP_OK) {
             free_participant(std::move(p));
             return ret;
         }
-    }
-    else
-    {
+    } else {
         UVG_LOG_INFO("Binding RTCP to port %d (source port)", src_port);
-        if ((ret = p->socket->bind(AF_INET, INADDR_ANY, src_port)) != RTP_OK)
-        {
+        if ((ret = p->socket->bind(AF_INET, INADDR_ANY, src_port)) != RTP_OK) {
             free_participant(std::move(p));
             return ret;
         }
     }
 
     if (rce_flags_ & RCE_SEND_ONLY)
-        p->role             = SENDER;
+        p->role = SENDER;
     else
-        p->role             = RECEIVER;
+        p->role = RECEIVER;
 
-    p->address          = p->socket->create_sockaddr(AF_INET, dst_addr, dst_port);
+    p->address = p->socket->create_sockaddr(AF_INET, dst_addr, dst_port);
     p->stats.clock_rate = clock_rate;
 
     /* Init ECN statistics only need for receiver */
@@ -621,10 +554,8 @@ rtp_error_t uvgrtp::rtcp::add_participant(std::string src_addr, std::string dst_
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
-{
-    if (num_receivers_ == MAX_SUPPORTED_PARTICIPANTS)
-    {
+rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc) {
+    if (num_receivers_ == MAX_SUPPORTED_PARTICIPANTS) {
         UVG_LOG_ERROR("Maximum number of RTCP participants reached.");
         // TODO: Support more participants by sending multiple messages at the same time
         return RTP_GENERIC_ERROR;
@@ -633,9 +564,8 @@ rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
     participants_mutex_.lock();
     /* RTCP is not in use for this media stream,
      * create a "fake" participant that is only used for storing statistics information */
-    if (initial_participants_.empty())
-    {
-        participants_[ssrc] = std::unique_ptr<rtcp_participant> (new rtcp_participant());
+    if (initial_participants_.empty()) {
+        participants_[ssrc] = std::unique_ptr<rtcp_participant>(new rtcp_participant());
         zero_stats(&participants_[ssrc]->stats);
     } else {
         participants_[ssrc] = std::move(initial_participants_.back());
@@ -643,19 +573,17 @@ rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
     }
     num_receivers_++;
 
-    participants_[ssrc]->rr_frame    = nullptr;
-    participants_[ssrc]->sr_frame    = nullptr;
-    participants_[ssrc]->sdes_frame  = nullptr;
-    participants_[ssrc]->app_frame   = nullptr;
-    participants_[ssrc]->ecn_frame   = nullptr;
+    participants_[ssrc]->rr_frame = nullptr;
+    participants_[ssrc]->sr_frame = nullptr;
+    participants_[ssrc]->sdes_frame = nullptr;
+    participants_[ssrc]->app_frame = nullptr;
+    participants_[ssrc]->ecn_frame = nullptr;
 
-    if ((rce_flags_ & RCE_RECEIVE_ONLY) && (rce_flags_ & RCE_RTCP))
-    {
+    if ((rce_flags_ & RCE_RECEIVE_ONLY) && (rce_flags_ & RCE_RTCP)) {
         auto remote_addr = participants_[ssrc]->socket->get_out_address();
         memcpy(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr));
-        if (memcmp(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr)) == 0)
-        {
-            char *addr = new char [INET_ADDRSTRLEN];
+        if (memcmp(&participants_[ssrc]->address, &remote_addr, sizeof(remote_addr)) == 0) {
+            char *addr = new char[INET_ADDRSTRLEN];
             auto port = htons(participants_[ssrc]->address.sin_port);
             inet_ntop(AF_INET, &participants_[ssrc]->address.sin_addr, addr, INET_ADDRSTRLEN);
             UVG_LOG_INFO("RCE_RECEIVE_ONLY -> Add ssrc: %u -> IP: %s:%d", ssrc, addr, port);
@@ -667,34 +595,33 @@ rtp_error_t uvgrtp::rtcp::add_participant(uint32_t ssrc)
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::remove_all_hooks()
-{
+rtp_error_t uvgrtp::rtcp::remove_all_hooks() {
     sr_mutex_.lock();
     sender_hook_ = nullptr;
-    sr_hook_f_   = nullptr;
-    sr_hook_u_   = nullptr;
+    sr_hook_f_ = nullptr;
+    sr_hook_u_ = nullptr;
     sr_mutex_.unlock();
 
     rr_mutex_.lock();
     receiver_hook_ = nullptr;
-    rr_hook_f_     = nullptr;
-    rr_hook_u_     = nullptr;
+    rr_hook_f_ = nullptr;
+    rr_hook_u_ = nullptr;
     rr_mutex_.unlock();
 
     sdes_mutex_.lock();
-    sdes_hook_   = nullptr;
+    sdes_hook_ = nullptr;
     sdes_hook_f_ = nullptr;
     sdes_hook_u_ = nullptr;
     sdes_mutex_.unlock();
 
     app_mutex_.lock();
-    app_hook_   = nullptr;
+    app_hook_ = nullptr;
     app_hook_f_ = nullptr;
     app_hook_u_ = nullptr;
     app_mutex_.unlock();
 
     ecn_mutex_.lock();
-    ecn_hook_   = nullptr;
+    ecn_hook_ = nullptr;
     ecn_hook_f_ = nullptr;
     ecn_hook_u_ = nullptr;
     ecn_mutex_.unlock();
@@ -702,111 +629,101 @@ rtp_error_t uvgrtp::rtcp::remove_all_hooks()
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sender_hook(void (*hook)(uvgrtp::frame::rtcp_sender_report*))
-{
-    if (!hook)
-    {
+rtp_error_t uvgrtp::rtcp::install_sender_hook(void (*hook)(uvgrtp::frame::rtcp_sender_report *)) {
+    if (!hook) {
         return RTP_INVALID_VALUE;
     }
 
     sr_mutex_.lock();
     sender_hook_ = hook;
-    sr_hook_f_   = nullptr;
-    sr_hook_u_   = nullptr;
+    sr_hook_f_ = nullptr;
+    sr_hook_u_ = nullptr;
     sr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sender_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler)
-{
-    if (!sr_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_sender_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler) {
+    if (!sr_handler) {
         return RTP_INVALID_VALUE;
     }
 
     sr_mutex_.lock();
     sender_hook_ = nullptr;
-    sr_hook_f_   = sr_handler;
-    sr_hook_u_   = nullptr;
+    sr_hook_f_ = sr_handler;
+    sr_hook_u_ = nullptr;
     sr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sender_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler)
-{
-    if (!sr_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_sender_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler) {
+    if (!sr_handler) {
         return RTP_INVALID_VALUE;
     }
 
     sr_mutex_.lock();
     sender_hook_ = nullptr;
-    sr_hook_f_   = nullptr;
-    sr_hook_u_   = sr_handler;
+    sr_hook_f_ = nullptr;
+    sr_hook_u_ = sr_handler;
     sr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_receiver_hook(void (*hook)(uvgrtp::frame::rtcp_receiver_report*))
-{
-    if (!hook)
-    {
+rtp_error_t uvgrtp::rtcp::install_receiver_hook(void (*hook)(uvgrtp::frame::rtcp_receiver_report *)) {
+    if (!hook) {
         return RTP_INVALID_VALUE;
     }
 
     rr_mutex_.lock();
     receiver_hook_ = hook;
-    rr_hook_f_     = nullptr;
-    rr_hook_u_     = nullptr;
+    rr_hook_f_ = nullptr;
+    rr_hook_u_ = nullptr;
     rr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_receiver_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_handler)
-{
-    if (!rr_handler)
-    {
+rtp_error_t uvgrtp::rtcp::install_receiver_hook(
+        std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_handler) {
+    if (!rr_handler) {
         return RTP_INVALID_VALUE;
     }
 
     rr_mutex_.lock();
     receiver_hook_ = nullptr;
-    rr_hook_f_     = rr_handler;
-    rr_hook_u_     = nullptr;
+    rr_hook_f_ = rr_handler;
+    rr_hook_u_ = nullptr;
     rr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_receiver_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_handler)
-{
-    if (!rr_handler)
-    {
+rtp_error_t uvgrtp::rtcp::install_receiver_hook(
+        std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_handler) {
+    if (!rr_handler) {
         return RTP_INVALID_VALUE;
     }
 
     rr_mutex_.lock();
     receiver_hook_ = nullptr;
-    rr_hook_f_     = nullptr;
-    rr_hook_u_     = rr_handler;
+    rr_hook_f_ = nullptr;
+    rr_hook_u_ = rr_handler;
     rr_mutex_.unlock();
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sdes_hook(void (*hook)(uvgrtp::frame::rtcp_sdes_packet*))
-{
-    if (!hook)
-    {
+rtp_error_t uvgrtp::rtcp::install_sdes_hook(void (*hook)(uvgrtp::frame::rtcp_sdes_packet *)) {
+    if (!hook) {
         return RTP_INVALID_VALUE;
     }
 
     sdes_mutex_.lock();
-    sdes_hook_   = hook;
+    sdes_hook_ = hook;
     sdes_hook_f_ = nullptr;
     sdes_hook_u_ = nullptr;
     sdes_mutex_.unlock();
@@ -814,15 +731,14 @@ rtp_error_t uvgrtp::rtcp::install_sdes_hook(void (*hook)(uvgrtp::frame::rtcp_sde
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sdes_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sdes_packet>)> sdes_handler)
-{
-    if (!sdes_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_sdes_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sdes_packet>)> sdes_handler) {
+    if (!sdes_handler) {
         return RTP_INVALID_VALUE;
     }
 
     sdes_mutex_.lock();
-    sdes_hook_   = nullptr;
+    sdes_hook_ = nullptr;
     sdes_hook_f_ = sdes_handler;
     sdes_hook_u_ = nullptr;
     sdes_mutex_.unlock();
@@ -830,15 +746,14 @@ rtp_error_t uvgrtp::rtcp::install_sdes_hook(std::function<void(std::shared_ptr<u
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_sdes_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sdes_packet>)> sdes_handler)
-{
-    if (!sdes_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_sdes_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sdes_packet>)> sdes_handler) {
+    if (!sdes_handler) {
         return RTP_INVALID_VALUE;
     }
 
     sdes_mutex_.lock();
-    sdes_hook_   = nullptr;
+    sdes_hook_ = nullptr;
     sdes_hook_f_ = nullptr;
     sdes_hook_u_ = sdes_handler;
     sdes_mutex_.unlock();
@@ -846,15 +761,13 @@ rtp_error_t uvgrtp::rtcp::install_sdes_hook(std::function<void(std::unique_ptr<u
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_app_hook(void (*hook)(uvgrtp::frame::rtcp_app_packet*))
-{
-    if (!hook)
-    {
+rtp_error_t uvgrtp::rtcp::install_app_hook(void (*hook)(uvgrtp::frame::rtcp_app_packet *)) {
+    if (!hook) {
         return RTP_INVALID_VALUE;
     }
 
     app_mutex_.lock();
-    app_hook_   = hook;
+    app_hook_ = hook;
     app_hook_f_ = nullptr;
     app_hook_u_ = nullptr;
     app_mutex_.unlock();
@@ -862,15 +775,14 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(void (*hook)(uvgrtp::frame::rtcp_app_
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler)
-{
-    if (!app_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_app_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler) {
+    if (!app_handler) {
         return RTP_INVALID_VALUE;
     }
 
     app_mutex_.lock();
-    app_hook_   = nullptr;
+    app_hook_ = nullptr;
     app_hook_f_ = app_handler;
     app_hook_u_ = nullptr;
     app_mutex_.unlock();
@@ -878,15 +790,14 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::shared_ptr<uv
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler)
-{
-    if (!app_handler)
-    {
+rtp_error_t
+uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler) {
+    if (!app_handler) {
         return RTP_INVALID_VALUE;
     }
 
     app_mutex_.lock();
-    app_hook_   = nullptr;
+    app_hook_ = nullptr;
     app_hook_f_ = nullptr;
     app_hook_u_ = app_handler;
     app_mutex_.unlock();
@@ -894,22 +805,19 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_ecn_hook(void* arg, void (*hook)(void *, uvgrtp::frame::rtcp_ecn_report *))
-{
-    if (!(rce_flags_ & RCE_ECN_TRAFFIC))
-    {
+rtp_error_t uvgrtp::rtcp::install_ecn_hook(void *arg, void (*hook)(void *, uvgrtp::frame::rtcp_ecn_report *)) {
+    if (!(rce_flags_ & RCE_ECN_TRAFFIC)) {
         UVG_LOG_ERROR("Can't create ECN report hook RCE_ECN_TRAFFIC not set!");
         return RTP_GENERIC_ERROR;
     }
 
-    if (!hook)
-    {
+    if (!hook) {
         return RTP_INVALID_VALUE;
     }
 
     ecn_mutex_.lock();
     ecn_hook_arg_ = arg;
-    ecn_hook_   = hook;
+    ecn_hook_ = hook;
     ecn_hook_f_ = nullptr;
     ecn_hook_u_ = nullptr;
     ecn_mutex_.unlock();
@@ -918,17 +826,15 @@ rtp_error_t uvgrtp::rtcp::install_ecn_hook(void* arg, void (*hook)(void *, uvgrt
 }
 
 rtp_error_t uvgrtp::rtcp::install_ecn_hook(
-        void* arg,
-        std::function<void(void*, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler)
-{
-    if (!app_handler)
-    {
+        void *arg,
+        std::function<void(void *, std::shared_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler) {
+    if (!app_handler) {
         return RTP_INVALID_VALUE;
     }
 
     ecn_mutex_.lock();
     ecn_hook_arg_ = arg;
-    ecn_hook_   = nullptr;
+    ecn_hook_ = nullptr;
     ecn_hook_f_ = app_handler;
     ecn_hook_u_ = nullptr;
     ecn_mutex_.unlock();
@@ -937,17 +843,15 @@ rtp_error_t uvgrtp::rtcp::install_ecn_hook(
 }
 
 rtp_error_t uvgrtp::rtcp::install_ecn_hook(
-        void* arg,
-        std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler)
-{
-    if (!app_handler)
-    {
+        void *arg,
+        std::function<void(void *, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler) {
+    if (!app_handler) {
         return RTP_INVALID_VALUE;
     }
 
     ecn_mutex_.lock();
     ecn_hook_arg_ = arg;
-    ecn_hook_   = nullptr;
+    ecn_hook_ = nullptr;
     ecn_hook_f_ = nullptr;
     ecn_hook_u_ = app_handler;
     ecn_mutex_.unlock();
@@ -955,11 +859,9 @@ rtp_error_t uvgrtp::rtcp::install_ecn_hook(
     return RTP_OK;
 }
 
-uvgrtp::frame::rtcp_sender_report* uvgrtp::rtcp::get_sender_packet(uint32_t ssrc)
-{
+uvgrtp::frame::rtcp_sender_report *uvgrtp::rtcp::get_sender_packet(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return nullptr;
     }
 
@@ -971,11 +873,9 @@ uvgrtp::frame::rtcp_sender_report* uvgrtp::rtcp::get_sender_packet(uint32_t ssrc
     return frame;
 }
 
-uvgrtp::frame::rtcp_receiver_report* uvgrtp::rtcp::get_receiver_packet(uint32_t ssrc)
-{
+uvgrtp::frame::rtcp_receiver_report *uvgrtp::rtcp::get_receiver_packet(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return nullptr;
     }
 
@@ -987,11 +887,9 @@ uvgrtp::frame::rtcp_receiver_report* uvgrtp::rtcp::get_receiver_packet(uint32_t 
     return frame;
 }
 
-uvgrtp::frame::rtcp_sdes_packet* uvgrtp::rtcp::get_sdes_packet(uint32_t ssrc)
-{
+uvgrtp::frame::rtcp_sdes_packet *uvgrtp::rtcp::get_sdes_packet(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return nullptr;
     }
 
@@ -1003,11 +901,9 @@ uvgrtp::frame::rtcp_sdes_packet* uvgrtp::rtcp::get_sdes_packet(uint32_t ssrc)
     return frame;
 }
 
-uvgrtp::frame::rtcp_app_packet* uvgrtp::rtcp::get_app_packet(uint32_t ssrc)
-{
+uvgrtp::frame::rtcp_app_packet *uvgrtp::rtcp::get_app_packet(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return nullptr;
     }
 
@@ -1019,11 +915,9 @@ uvgrtp::frame::rtcp_app_packet* uvgrtp::rtcp::get_app_packet(uint32_t ssrc)
     return frame;
 }
 
-uvgrtp::frame::rtcp_ecn_report* uvgrtp::rtcp::get_ecn_packet(uint32_t ssrc)
-{
+uvgrtp::frame::rtcp_ecn_report *uvgrtp::rtcp::get_ecn_packet(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return nullptr;
     }
 
@@ -1035,17 +929,14 @@ uvgrtp::frame::rtcp_ecn_report* uvgrtp::rtcp::get_ecn_packet(uint32_t ssrc)
     return frame;
 }
 
-std::vector<std::shared_ptr<uvgrtp::socket>>& uvgrtp::rtcp::get_sockets()
-{
+std::vector<std::shared_ptr<uvgrtp::socket>> &uvgrtp::rtcp::get_sockets() {
     return sockets_;
 }
 
-std::vector<uint32_t> uvgrtp::rtcp::get_participants() const
-{
+std::vector<uint32_t> uvgrtp::rtcp::get_participants() const {
     std::vector<uint32_t> ssrcs;
 
-    for (auto& i : participants_)
-    {
+    for (auto &i: participants_) {
         std::lock_guard prtcp_lock(participants_mutex_);
         ssrcs.push_back(i.first);
     }
@@ -1053,92 +944,82 @@ std::vector<uint32_t> uvgrtp::rtcp::get_participants() const
     return ssrcs;
 }
 
-void uvgrtp::rtcp::update_rtcp_bandwidth(size_t pkt_size)
-{
-    rtcp_pkt_count_    += 1;
-    rtcp_byte_count_   += pkt_size + UDP_HDR_SIZE + IPV4_HDR_SIZE;
-    avg_rtcp_pkt_pize_  = rtcp_byte_count_ / rtcp_pkt_count_;
+void uvgrtp::rtcp::update_rtcp_bandwidth(size_t pkt_size) {
+    rtcp_pkt_count_ += 1;
+    rtcp_byte_count_ += pkt_size + UDP_HDR_SIZE + IPV4_HDR_SIZE;
+    avg_rtcp_pkt_pize_ = rtcp_byte_count_ / rtcp_pkt_count_;
 }
 
 
-void uvgrtp::rtcp::zero_stats(uvgrtp::sender_statistics *stats)
-{
-    stats->sent_pkts  = 0;
+void uvgrtp::rtcp::zero_stats(uvgrtp::sender_statistics *stats) {
+    stats->sent_pkts = 0;
     stats->sent_bytes = 0;
 
     stats->sent_rtp_packet = false;
 }
 
-void uvgrtp::rtcp::zero_stats(uvgrtp::receiver_statistics *stats)
-{
-    stats->received_pkts  = 0;
-    stats->dropped_pkts   = 0;
+void uvgrtp::rtcp::zero_stats(uvgrtp::receiver_statistics *stats) {
+    stats->received_pkts = 0;
+    stats->dropped_pkts = 0;
     stats->received_bytes = 0;
 
     stats->received_rtp_packet = false;
 
-    stats->jitter  = 0;
+    stats->jitter = 0;
     stats->transit = 0;
 
     stats->initial_ntp = 0;
     stats->initial_rtp = 0;
-    stats->clock_rate  = 0;
-    stats->lsr         = 0;
+    stats->clock_rate = 0;
+    stats->lsr = 0;
 
-    stats->max_seq  = 0;
+    stats->max_seq = 0;
     stats->base_seq = 0;
-    stats->bad_seq  = 0;
-    stats->cycles   = 0;
+    stats->bad_seq = 0;
+    stats->cycles = 0;
 }
 
 void uvgrtp::rtcp::zero_stats(uvgrtp::ecn_statistics *stats) {
     stats->ext_highest_seq_num = 0;
     stats->packet_count_tw = 0;
     stats->ect_ce_count_tw = 0;
+    stats->bytesInFrame = 0;
 }
 
-bool uvgrtp::rtcp::is_participant(uint32_t ssrc) const
-{
+bool uvgrtp::rtcp::is_participant(uint32_t ssrc) const {
     std::lock_guard prtcp_lock(participants_mutex_);
     return participants_.find(ssrc) != participants_.end();
 }
 
-void uvgrtp::rtcp::set_ts_info(uint64_t clock_start, uint32_t clock_rate, uint32_t rtp_ts_start)
-{
-    clock_start_  = clock_start;
-    clock_rate_   = clock_rate;
+void uvgrtp::rtcp::set_ts_info(uint64_t clock_start, uint32_t clock_rate, uint32_t rtp_ts_start) {
+    clock_start_ = clock_start;
+    clock_rate_ = clock_rate;
     rtp_ts_start_ = rtp_ts_start;
 }
 
-void uvgrtp::rtcp::sender_update_stats(const uvgrtp::frame::rtp_frame *frame)
-{
-    if (!frame)
-    {
+void uvgrtp::rtcp::sender_update_stats(const uvgrtp::frame::rtp_frame *frame) {
+    if (!frame) {
         return;
     }
 
-    if (frame->payload_len > UINT32_MAX)
-    {
+    if (frame->payload_len > UINT32_MAX) {
         UVG_LOG_ERROR("Payload size larger than uint32 max which is not supported by RFC 3550");
         return;
     }
 
-    our_stats.sent_pkts  += 1;
-    our_stats.sent_bytes += (uint32_t)frame->payload_len;
+    our_stats.sent_pkts += 1;
+    our_stats.sent_bytes += (uint32_t) frame->payload_len;
     our_stats.sent_rtp_packet = true;
 }
 
-rtp_error_t uvgrtp::rtcp::init_new_participant(const uvgrtp::frame::rtp_frame *frame)
-{
+rtp_error_t uvgrtp::rtcp::init_new_participant(const uvgrtp::frame::rtp_frame *frame) {
     rtp_error_t ret;
 
-    if ((ret = uvgrtp::rtcp::add_participant(frame->header.ssrc)) != RTP_OK)
-    {
+    if ((ret = uvgrtp::rtcp::add_participant(frame->header.ssrc)) != RTP_OK) {
         return ret;
     }
 
-    if ((ret = uvgrtp::rtcp::init_participant_seq(frame->header.ssrc, frame->header.seq)) != RTP_OK)
-    {
+    if ((ret = uvgrtp::rtcp::init_participant_seq(frame->header.ssrc, frame->header.seq)) != RTP_OK) {
         return ret;
     }
     participants_mutex_.lock();
@@ -1159,45 +1040,38 @@ rtp_error_t uvgrtp::rtcp::init_new_participant(const uvgrtp::frame::rtp_frame *f
     return ret;
 }
 
-rtp_error_t uvgrtp::rtcp::update_sender_stats(size_t pkt_size)
-{
-    if (our_role_ == RECEIVER)
-    {
+rtp_error_t uvgrtp::rtcp::update_sender_stats(size_t pkt_size) {
+    if (our_role_ == RECEIVER) {
         our_role_ = SENDER;
     }
 
-    if (our_stats.sent_bytes + pkt_size > UINT32_MAX)
-    {
+    if (our_stats.sent_bytes + pkt_size > UINT32_MAX) {
         UVG_LOG_ERROR("Sent bytes overflow");
     }
 
-    our_stats.sent_pkts  += 1;
-    our_stats.sent_bytes += (uint32_t)pkt_size;
+    our_stats.sent_pkts += 1;
+    our_stats.sent_bytes += (uint32_t) pkt_size;
     our_stats.sent_rtp_packet = true;
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::init_participant_seq(uint32_t ssrc, uint16_t base_seq)
-{
+rtp_error_t uvgrtp::rtcp::init_participant_seq(uint32_t ssrc, uint16_t base_seq) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return RTP_NOT_FOUND;
     }
 
     participants_[ssrc]->stats.base_seq = base_seq;
-    participants_[ssrc]->stats.max_seq  = base_seq;
-    participants_[ssrc]->stats.bad_seq  = (RTP_SEQ_MOD + 1)%UINT32_MAX;
+    participants_[ssrc]->stats.max_seq = base_seq;
+    participants_[ssrc]->stats.bad_seq = (RTP_SEQ_MOD + 1) % UINT32_MAX;
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::update_participant_seq(uint32_t ssrc, uint16_t seq)
-{
+rtp_error_t uvgrtp::rtcp::update_participant_seq(uint32_t ssrc, uint16_t seq) {
     std::unique_lock prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         UVG_LOG_ERROR("Did not find participant SSRC when updating seq");
         return RTP_GENERIC_ERROR;
     }
@@ -1206,60 +1080,53 @@ rtp_error_t uvgrtp::rtcp::update_participant_seq(uint32_t ssrc, uint16_t seq)
 
     /* Source is not valid until MIN_SEQUENTIAL packets with
     * sequential sequence numbers have been received.  */
-    if (participants_[ssrc]->probation)
-    {
-       /* packet is in sequence */
-       if (seq == participants_[ssrc]->stats.max_seq + 1)
-       {
-           participants_[ssrc]->probation--;
-           participants_[ssrc]->stats.max_seq = seq;
-           if (!participants_[ssrc]->probation)
-           {
-               prtcp_lock.unlock();
-               uvgrtp::rtcp::init_participant_seq(ssrc, seq);
-               return RTP_OK;
-           }
-       } else {
-           participants_[ssrc]->probation = MIN_SEQUENTIAL - 1;
-           participants_[ssrc]->stats.max_seq = seq;
-       }
+    if (participants_[ssrc]->probation) {
+        /* packet is in sequence */
+        if (seq == participants_[ssrc]->stats.max_seq + 1) {
+            participants_[ssrc]->probation--;
+            participants_[ssrc]->stats.max_seq = seq;
+            if (!participants_[ssrc]->probation) {
+                prtcp_lock.unlock();
+                uvgrtp::rtcp::init_participant_seq(ssrc, seq);
+                return RTP_OK;
+            }
+        } else {
+            participants_[ssrc]->probation = MIN_SEQUENTIAL - 1;
+            participants_[ssrc]->stats.max_seq = seq;
+        }
 
-       return RTP_NOT_READY;
+        return RTP_NOT_READY;
     } else if (udelta < MAX_DROPOUT) {
-       /* in order, with permissible gap */
-       if (seq < participants_[ssrc]->stats.max_seq)
-       {
-           /* Sequence number wrapped - count another 64K cycle.  */
-           participants_[ssrc]->stats.cycles += 1;
-       }
-       participants_[ssrc]->stats.max_seq = seq;
+        /* in order, with permissible gap */
+        if (seq < participants_[ssrc]->stats.max_seq) {
+            /* Sequence number wrapped - count another 64K cycle.  */
+            participants_[ssrc]->stats.cycles += 1;
+        }
+        participants_[ssrc]->stats.max_seq = seq;
     } else if (udelta <= RTP_SEQ_MOD - MAX_MISORDER) {
-       /* the sequence number made a very large jump */
-       if (seq == participants_[ssrc]->stats.bad_seq)
-       {
-           /* Two sequential packets -- assume that the other side
-            * restarted without telling us so just re-sync
-            * (i.e., pretend this was the first packet).  */
-           prtcp_lock.unlock();
-           uvgrtp::rtcp::init_participant_seq(ssrc, seq);
-           prtcp_lock.lock();
-       } else {
-           participants_[ssrc]->stats.bad_seq = (seq + 1) & (RTP_SEQ_MOD - 1);
-           UVG_LOG_ERROR("Invalid sequence number. Seq jump: %u -> %u", participants_[ssrc]->stats.max_seq, seq);
-           return RTP_GENERIC_ERROR;
-       }
+        /* the sequence number made a very large jump */
+        if (seq == participants_[ssrc]->stats.bad_seq) {
+            /* Two sequential packets -- assume that the other side
+             * restarted without telling us so just re-sync
+             * (i.e., pretend this was the first packet).  */
+            prtcp_lock.unlock();
+            uvgrtp::rtcp::init_participant_seq(ssrc, seq);
+            prtcp_lock.lock();
+        } else {
+            participants_[ssrc]->stats.bad_seq = (seq + 1) & (RTP_SEQ_MOD - 1);
+            UVG_LOG_ERROR("Invalid sequence number. Seq jump: %u -> %u", participants_[ssrc]->stats.max_seq, seq);
+            return RTP_GENERIC_ERROR;
+        }
     } else {
-       /* duplicate or reordered packet */
+        /* duplicate or reordered packet */
     }
 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::reset_rtcp_state(uint32_t ssrc)
-{
+rtp_error_t uvgrtp::rtcp::reset_rtcp_state(uint32_t ssrc) {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) != participants_.end())
-    {
+    if (participants_.find(ssrc) != participants_.end()) {
         return RTP_SSRC_COLLISION;
     }
 
@@ -1268,52 +1135,49 @@ rtp_error_t uvgrtp::rtcp::reset_rtcp_state(uint32_t ssrc)
     return RTP_OK;
 }
 
-bool uvgrtp::rtcp::collision_detected(uint32_t ssrc, const sockaddr_in& src_addr) const
-{
+bool uvgrtp::rtcp::collision_detected(uint32_t ssrc, const sockaddr_in &src_addr) const {
     std::lock_guard prtcp_lock(participants_mutex_);
-    if (participants_.find(ssrc) == participants_.end())
-    {
+    if (participants_.find(ssrc) == participants_.end()) {
         return false;
     }
 
-    if (src_addr.sin_port        != participants_.at(ssrc)->address.sin_port &&
-        src_addr.sin_addr.s_addr != participants_.at(ssrc)->address.sin_addr.s_addr)
-    {
+    if (src_addr.sin_port != participants_.at(ssrc)->address.sin_port &&
+        src_addr.sin_addr.s_addr != participants_.at(ssrc)->address.sin_addr.s_addr) {
         return true;
     }
 
     return false;
 }
 
-void uvgrtp::rtcp::update_session_statistics(const uvgrtp::frame::rtp_frame *frame)
-{
+void uvgrtp::rtcp::update_session_statistics(const uvgrtp::frame::rtp_frame *frame) {
     std::lock_guard prtcp_lock(participants_mutex_);
     participants_[frame->header.ssrc]->stats.received_rtp_packet = true;
 
-    participants_[frame->header.ssrc]->stats.received_pkts  += 1;
-    participants_[frame->header.ssrc]->stats.received_bytes += (uint32_t)frame->payload_len;
+    participants_[frame->header.ssrc]->stats.received_pkts += 1;
+    participants_[frame->header.ssrc]->stats.received_bytes += (uint32_t) frame->payload_len;
 
     /* calculate number of dropped packets */
-    int extended_max = (static_cast<int>(participants_[frame->header.ssrc]->stats.cycles) << 16) + 
-        participants_[frame->header.ssrc]->stats.max_seq;
-    int expected     = extended_max - participants_[frame->header.ssrc]->stats.base_seq + 1;
+    int extended_max = (static_cast<int>(participants_[frame->header.ssrc]->stats.cycles) << 16) +
+                       participants_[frame->header.ssrc]->stats.max_seq;
+    int expected = extended_max - participants_[frame->header.ssrc]->stats.base_seq + 1;
 
     int dropped = expected - participants_[frame->header.ssrc]->stats.received_pkts;
     participants_[frame->header.ssrc]->stats.dropped_pkts = dropped >= 0 ? dropped : 0;
 
     // the arrival time expressed as an RTP timestamp
     uint32_t arrival = participants_[frame->header.ssrc]->stats.initial_rtp +
-        (uint32_t)uvgrtp::clock::ntp::diff_now(participants_[frame->header.ssrc]->stats.initial_ntp)*
-        (participants_[frame->header.ssrc]->stats.clock_rate / 1000);
+                       (uint32_t) uvgrtp::clock::ntp::diff_now(participants_[frame->header.ssrc]->stats.initial_ntp) *
+                       (participants_[frame->header.ssrc]->stats.clock_rate / 1000);
 
     // calculate interarrival jitter. See RFC 3550 A.8
     uint32_t transit = arrival - frame->header.timestamp; // A.8: int transit = arrival - r->ts
-    uint32_t trans_difference = std::abs((int)(transit - participants_[frame->header.ssrc]->stats.transit));
+    uint32_t trans_difference = std::abs((int) (transit - participants_[frame->header.ssrc]->stats.transit));
 
     // update statistics
     participants_[frame->header.ssrc]->stats.transit = transit;
-    participants_[frame->header.ssrc]->stats.jitter += (1.f / 16.f) * 
-        ((double)trans_difference - participants_[frame->header.ssrc]->stats.jitter);
+    participants_[frame->header.ssrc]->stats.jitter += (1.f / 16.f) *
+                                                       ((double) trans_difference -
+                                                        participants_[frame->header.ssrc]->stats.jitter);
 }
 
 /* RTCP packet handler is responsible for doing two things:
@@ -1324,14 +1188,13 @@ void uvgrtp::rtcp::update_session_statistics(const uvgrtp::frame::rtp_frame *fra
  *   have been received.
  * - it keeps track of participants' SSRCs and if a collision
  *   is detected, the RTP context is updated */
-rtp_error_t uvgrtp::rtcp::recv_packet_handler(void *arg, int rce_flags, frame::rtp_frame **out)
-{
-    (void)rce_flags;
+rtp_error_t uvgrtp::rtcp::recv_packet_handler(void *arg, int rce_flags, frame::rtp_frame **out) {
+    (void) rce_flags;
 
     // The validity of the header has been checked by previous handlers
 
     uvgrtp::frame::rtp_frame *frame = *out;
-    uvgrtp::rtcp *rtcp              = (uvgrtp::rtcp *)arg;
+    uvgrtp::rtcp *rtcp = (uvgrtp::rtcp *) arg;
 
     /* If this is the first packet from remote, move the participant from initial_participants_
      * to participants_, initialize its state and put it on probation until enough valid
@@ -1340,18 +1203,15 @@ rtp_error_t uvgrtp::rtcp::recv_packet_handler(void *arg, int rce_flags, frame::r
      * Otherwise update and monitor the received sequence numbers to determine whether something
      * has gone awry with the sender's sequence number calculations/delivery of packets */
     rtp_error_t ret = RTP_OK;
-    if (!rtcp->is_participant(frame->header.ssrc))
-    {
-        if ((rtcp->init_new_participant(frame)) != RTP_OK)
-        {
+    if (!rtcp->is_participant(frame->header.ssrc)) {
+        if ((rtcp->init_new_participant(frame)) != RTP_OK) {
             UVG_LOG_ERROR("Failed to initiate new participant");
             return RTP_GENERIC_ERROR;
         }
     } else if ((ret = rtcp->update_participant_seq(frame->header.ssrc, frame->header.seq)) != RTP_OK) {
         if (ret == RTP_NOT_READY) {
             return RTP_OK;
-        }
-        else {
+        } else {
             UVG_LOG_ERROR("Failed to update participant with seq %u", frame->header.seq);
             return ret;
         }
@@ -1365,35 +1225,29 @@ rtp_error_t uvgrtp::rtcp::recv_packet_handler(void *arg, int rce_flags, frame::r
     return RTP_PKT_NOT_HANDLED;
 }
 
-rtp_error_t uvgrtp::rtcp::send_packet_handler_vec(void *arg, uvgrtp::buf_vec& buffers)
-{
+rtp_error_t uvgrtp::rtcp::send_packet_handler_vec(void *arg, uvgrtp::buf_vec &buffers) {
     ssize_t pkt_size = -RTP_HDR_SIZE;
 
-    for (auto& buffer : buffers)
-    {
+    for (auto &buffer: buffers) {
         pkt_size += buffer.first;
     }
 
-    if (pkt_size < 0)
-    {
+    if (pkt_size < 0) {
         return RTP_INVALID_VALUE;
     }
 
-    return ((uvgrtp::rtcp *)arg)->update_sender_stats(pkt_size);
+    return ((uvgrtp::rtcp *) arg)->update_sender_stats(pkt_size);
 }
 
-size_t uvgrtp::rtcp::rtcp_length_in_bytes(uint16_t length)
-{
+size_t uvgrtp::rtcp::rtcp_length_in_bytes(uint16_t length) {
     size_t expanded_length = length;
 
     // the length field is the rtcp packet size measured in 32-bit words - 1
-    return (expanded_length + 1)* sizeof(uint32_t);
+    return (expanded_length + 1) * sizeof(uint32_t);
 }
 
-rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
-{
-    if (!buffer || !size)
-    {
+rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size) {
+    if (!buffer || !size) {
         return RTP_INVALID_VALUE;
     }
 
@@ -1411,10 +1265,9 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
     uint32_t sender_ssrc = 0;
 
     // decrypt the whole compound packet
-    if (size > RTCP_HEADER_SIZE + SSRC_CSRC_SIZE)
-    {
-        sender_ssrc = ntohl(*(uint32_t*)& buffer[read_ptr + RTCP_HEADER_SIZE]);
-        if (srtcp_ && (ret = srtcp_->handle_rtcp_decryption(rce_flags_, sender_ssrc, 
+    if (size > RTCP_HEADER_SIZE + SSRC_CSRC_SIZE) {
+        sender_ssrc = ntohl(*(uint32_t *) &buffer[read_ptr + RTCP_HEADER_SIZE]);
+        if (srtcp_ && (ret = srtcp_->handle_rtcp_decryption(rce_flags_, sender_ssrc,
             buffer + RTCP_HEADER_SIZE + SSRC_CSRC_SIZE, size)) != RTP_OK)
         {
             UVG_LOG_ERROR("Failed at decryption");
@@ -1423,13 +1276,11 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
     }
 
     // this handles each separate rtcp packet in a compound packet
-    while (remaining_size > 0)
-    {
+    while (remaining_size > 0) {
         ++packets;
-        if (remaining_size < RTCP_HEADER_SIZE)
-        {
+        if (remaining_size < RTCP_HEADER_SIZE) {
             UVG_LOG_ERROR("Didn't get enough data for an rtcp header. Packet # %i Got data: %lli",
-                packets, remaining_size);
+                          packets, remaining_size);
             return RTP_INVALID_VALUE;
         }
 
@@ -1443,38 +1294,33 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
         size_t packet_end = read_ptr - RTCP_HEADER_SIZE + size_of_rtcp_packet;
 
         UVG_LOG_DEBUG("Handling packet # %i with size %li and remaining packet amount %li",
-            packets, size_of_rtcp_packet, remaining_size);
+                      packets, size_of_rtcp_packet, remaining_size);
 
-        if (header.version != 0x2)
-        {
+        if (header.version != 0x2) {
             UVG_LOG_ERROR("Packet # %i has invalid header version %u", packets, header.version);
             return RTP_INVALID_VALUE;
         }
 
-        if (remaining_size < size_of_rtcp_packet)
-        {
+        if (remaining_size < size_of_rtcp_packet) {
             UVG_LOG_ERROR("Received a partial RTCP packet, not supported!");
             return RTP_NOT_SUPPORTED;
         }
 
         // TODO: I think we can?
-        if (header.padding)
-        {
+        if (header.padding) {
             UVG_LOG_ERROR("Cannot handle padded packets!");
             return RTP_INVALID_VALUE;
         }
 
         if (header.pkt_type > uvgrtp::frame::RTCP_RTP_FB ||
-            header.pkt_type < uvgrtp::frame::RTCP_FT_SR)
-        {
+            header.pkt_type < uvgrtp::frame::RTCP_FT_SR) {
             UVG_LOG_ERROR("Invalid packet type (%u)!", header.pkt_type);
             return RTP_INVALID_VALUE;
         }
 
         ret = RTP_INVALID_VALUE;
 
-        switch (header.pkt_type)
-        {
+        switch (header.pkt_type) {
             case uvgrtp::frame::RTCP_FT_SR:
                 ret = handle_sender_report_packet(buffer, read_ptr, packet_end, header);
                 break;
@@ -1504,8 +1350,7 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
                 break;
         }
 
-        if (ret != RTP_OK)
-        {
+        if (ret != RTP_OK) {
             UVG_LOG_WARN("Error parsing RTCP packet");
             return ret;
         }
@@ -1514,73 +1359,61 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
         remaining_size -= size_of_rtcp_packet;
     }
 
-    if (packets > 1)
-    {
+    if (packets > 1) {
         UVG_LOG_DEBUG("Received a compound RTCP frame with %i packets and size: %li", packets, size);
-    }
-    else
-    {
+    } else {
         UVG_LOG_WARN("Received RTCP packet was not a compound packet!");
     }
 
     return RTP_OK;
 }
 
-void uvgrtp::rtcp::read_rtcp_header(const uint8_t* buffer, size_t& read_ptr, uvgrtp::frame::rtcp_header& header)
-{
+void uvgrtp::rtcp::read_rtcp_header(const uint8_t *buffer, size_t &read_ptr, uvgrtp::frame::rtcp_header &header) {
     header.version = (buffer[read_ptr] >> 6) & 0x3;
     header.padding = (buffer[read_ptr] >> 5) & 0x1;
 
     header.pkt_type = buffer[read_ptr + 1] & 0xff;
 
-    if (header.pkt_type == uvgrtp::frame::RTCP_FT_APP)
-    {
+    if (header.pkt_type == uvgrtp::frame::RTCP_FT_APP) {
         header.pkt_subtype = buffer[read_ptr] & 0x1f;
-    }
-    else {
+    } else {
         header.count = buffer[read_ptr] & 0x1f;
     }
 
-    header.length = ntohs(*(uint16_t*)& buffer[read_ptr + 2]);
+    header.length = ntohs(*(uint16_t *) &buffer[read_ptr + 2]);
 
     read_ptr += RTCP_HEADER_SIZE;
 }
 
-void uvgrtp::rtcp::read_reports(const uint8_t* buffer, size_t& read_ptr, size_t packet_end, uint8_t count,
-    std::vector<uvgrtp::frame::rtcp_report_block>& reports)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        if (packet_end >= read_ptr + REPORT_BLOCK_SIZE)
-        {
+void uvgrtp::rtcp::read_reports(const uint8_t *buffer, size_t &read_ptr, size_t packet_end, uint8_t count,
+                                std::vector<uvgrtp::frame::rtcp_report_block> &reports) {
+    for (int i = 0; i < count; ++i) {
+        if (packet_end >= read_ptr + REPORT_BLOCK_SIZE) {
             uvgrtp::frame::rtcp_report_block report;
-            report.ssrc = ntohl(*(uint32_t*)& buffer[read_ptr + 0]);
-            report.fraction = (ntohl(*(uint32_t*)& buffer[read_ptr + 4])) >> 24;
-            report.lost = (ntohl(*(int32_t*)& buffer[read_ptr + 4])) & 0xfffffd;
-            report.last_seq = ntohl(*(uint32_t*)& buffer[read_ptr + 8]);
-            report.jitter = ntohl(*(uint32_t*)& buffer[read_ptr + 12]);
-            report.lsr = ntohl(*(uint32_t*)& buffer[read_ptr + 16]);
-            report.dlsr = ntohl(*(uint32_t*)& buffer[read_ptr + 20]);
+            report.ssrc = ntohl(*(uint32_t *) &buffer[read_ptr + 0]);
+            report.fraction = (ntohl(*(uint32_t *) &buffer[read_ptr + 4])) >> 24;
+            report.lost = (ntohl(*(int32_t *) &buffer[read_ptr + 4])) & 0xfffffd;
+            report.last_seq = ntohl(*(uint32_t *) &buffer[read_ptr + 8]);
+            report.jitter = ntohl(*(uint32_t *) &buffer[read_ptr + 12]);
+            report.lsr = ntohl(*(uint32_t *) &buffer[read_ptr + 16]);
+            report.dlsr = ntohl(*(uint32_t *) &buffer[read_ptr + 20]);
 
             reports.push_back(report);
             read_ptr += REPORT_BLOCK_SIZE;
-        }
-        else {
+        } else {
             UVG_LOG_WARN("Received rtcp packet is smaller than the indicated number of reports!"
-                "Read: %i/%i, Read ptr: %i, Packet End:", i, count, read_ptr, packet_end);
+                         "Read: %i/%i, Read ptr: %i, Packet End:", i, count, read_ptr, packet_end);
         }
     }
 }
 
-void uvgrtp::rtcp::read_ssrc(const uint8_t* buffer, size_t& read_ptr, uint32_t& out_ssrc)
-{
-    out_ssrc = ntohl(*(uint32_t*)& buffer[read_ptr]);
+void uvgrtp::rtcp::read_ssrc(const uint8_t *buffer, size_t &read_ptr, uint32_t &out_ssrc) {
+    out_ssrc = ntohl(*(uint32_t *) &buffer[read_ptr]);
     read_ptr += SSRC_CSRC_SIZE;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_receiver_report_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
-    uvgrtp::frame::rtcp_header& header)
-{
+rtp_error_t uvgrtp::rtcp::handle_receiver_report_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
+                                                        uvgrtp::frame::rtcp_header &header) {
     auto frame = new uvgrtp::frame::rtcp_receiver_report;
     frame->header = header;
     read_ssrc(buffer, read_ptr, frame->ssrc);
@@ -1590,8 +1423,7 @@ rtp_error_t uvgrtp::rtcp::handle_receiver_report_packet(uint8_t* buffer, size_t&
      * but rather in the initial_participants_ vector
      *
      * Check if that's the case and if so, move the entry from initial_participants_ to participants_ */
-    if (!is_participant(frame->ssrc))
-    {
+    if (!is_participant(frame->ssrc)) {
         UVG_LOG_INFO("Got an RR from a previously unknown participant SSRC %lu", frame->ssrc);
         add_participant(frame->ssrc);
     }
@@ -1601,18 +1433,14 @@ rtp_error_t uvgrtp::rtcp::handle_receiver_report_packet(uint8_t* buffer, size_t&
     rr_mutex_.lock();
     if (receiver_hook_) {
         receiver_hook_(frame);
-    }
-    else if (rr_hook_f_) {
+    } else if (rr_hook_f_) {
         rr_hook_f_(std::shared_ptr<uvgrtp::frame::rtcp_receiver_report>(frame));
-    }
-    else if (rr_hook_u_) {
+    } else if (rr_hook_u_) {
         rr_hook_u_(std::unique_ptr<uvgrtp::frame::rtcp_receiver_report>(frame));
-    }
-    else {
+    } else {
         std::lock_guard prtcp_lock(participants_mutex_);
         /* Deallocate previous frame from the buffer if it exists, it's going to get overwritten */
-        if (participants_[frame->ssrc]->rr_frame)
-        {
+        if (participants_[frame->ssrc]->rr_frame) {
             delete participants_[frame->ssrc]->rr_frame;
         }
 
@@ -1623,14 +1451,12 @@ rtp_error_t uvgrtp::rtcp::handle_receiver_report_packet(uint8_t* buffer, size_t&
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_sender_report_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
-    uvgrtp::frame::rtcp_header& header)
-{
+rtp_error_t uvgrtp::rtcp::handle_sender_report_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
+                                                      uvgrtp::frame::rtcp_header &header) {
     auto frame = new uvgrtp::frame::rtcp_sender_report;
     frame->header = header;
     read_ssrc(buffer, read_ptr, frame->ssrc);
-    if (!is_participant(frame->ssrc))
-    {
+    if (!is_participant(frame->ssrc)) {
         UVG_LOG_INFO("Got an SR from a previously unknown participant SSRC %lu", frame->ssrc);
         add_participant(frame->ssrc);
     }
@@ -1638,16 +1464,16 @@ rtp_error_t uvgrtp::rtcp::handle_sender_report_packet(uint8_t* buffer, size_t& r
     participants_mutex_.lock();
     participants_[frame->ssrc]->stats.sr_ts = uvgrtp::clock::hrc::now();
 
-    frame->sender_info.ntp_msw = ntohl(*(uint32_t*)& buffer[read_ptr]);
-    frame->sender_info.ntp_lsw = ntohl(*(uint32_t*)& buffer[read_ptr + 4]);
-    frame->sender_info.rtp_ts = ntohl(*(uint32_t*)& buffer[read_ptr + 8]);
-    frame->sender_info.pkt_cnt = ntohl(*(uint32_t*)& buffer[read_ptr + 12]);
-    frame->sender_info.byte_cnt = ntohl(*(uint32_t*)& buffer[read_ptr + 16]);
+    frame->sender_info.ntp_msw = ntohl(*(uint32_t *) &buffer[read_ptr]);
+    frame->sender_info.ntp_lsw = ntohl(*(uint32_t *) &buffer[read_ptr + 4]);
+    frame->sender_info.rtp_ts = ntohl(*(uint32_t *) &buffer[read_ptr + 8]);
+    frame->sender_info.pkt_cnt = ntohl(*(uint32_t *) &buffer[read_ptr + 12]);
+    frame->sender_info.byte_cnt = ntohl(*(uint32_t *) &buffer[read_ptr + 16]);
     read_ptr += SENDER_INFO_SIZE;
 
     participants_[frame->ssrc]->stats.lsr =
-        ((frame->sender_info.ntp_msw & 0xffff) << 16) |
-        (frame->sender_info.ntp_lsw >> 16);
+            ((frame->sender_info.ntp_msw & 0xffff) << 16) |
+            (frame->sender_info.ntp_lsw >> 16);
     participants_mutex_.unlock();
 
     read_reports(buffer, read_ptr, packet_end, frame->header.count, frame->report_blocks);
@@ -1655,18 +1481,14 @@ rtp_error_t uvgrtp::rtcp::handle_sender_report_packet(uint8_t* buffer, size_t& r
     sr_mutex_.lock();
     if (sender_hook_) {
         sender_hook_(frame);
-    }
-    else if (sr_hook_f_) {
+    } else if (sr_hook_f_) {
         sr_hook_f_(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>(frame));
-    }
-    else if (sr_hook_u_) {
+    } else if (sr_hook_u_) {
         sr_hook_u_(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>(frame));
-    }
-    else {
+    } else {
         std::lock_guard prtcp_lock(participants_mutex_);
         /* Deallocate previous frame from the buffer if it exists, it's going to get overwritten */
-        if (participants_[frame->ssrc]->sr_frame)
-        {
+        if (participants_[frame->ssrc]->sr_frame) {
             delete participants_[frame->ssrc]->sr_frame;
         }
 
@@ -1678,11 +1500,9 @@ rtp_error_t uvgrtp::rtcp::handle_sender_report_packet(uint8_t* buffer, size_t& r
 }
 
 
-rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t* packet, size_t& read_ptr, size_t packet_end,
-    uvgrtp::frame::rtcp_header& header, uint32_t sender_ssrc)
-{
-    if (!is_participant(sender_ssrc))
-    {
+rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t *packet, size_t &read_ptr, size_t packet_end,
+                                             uvgrtp::frame::rtcp_header &header, uint32_t sender_ssrc) {
+    if (!is_participant(sender_ssrc)) {
         UVG_LOG_INFO("Got an SDES packet from a previously unknown participant SSRC %lu", sender_ssrc);
         add_participant(sender_ssrc);
     }
@@ -1691,21 +1511,18 @@ rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t* packet, size_t& read_ptr, 
     frame->header = header;
 
     // Read SDES chunks
-    while (read_ptr + SSRC_CSRC_SIZE <= packet_end)
-    {
+    while (read_ptr + SSRC_CSRC_SIZE <= packet_end) {
         uvgrtp::frame::rtcp_sdes_chunk chunk;
         read_ssrc(packet, read_ptr, chunk.ssrc);
 
         // Read chunk items, 2 makes sure we at least get item type and length
-        while (read_ptr + 2 <= packet_end && packet[read_ptr] != 0)
-        {
+        while (read_ptr + 2 <= packet_end && packet[read_ptr] != 0) {
             uvgrtp::frame::rtcp_sdes_item item;
             item.type = packet[read_ptr];
             item.length = packet[read_ptr + 1];
             read_ptr += 2;
 
-            if (read_ptr + item.length <= packet_end)
-            {
+            if (read_ptr + item.length <= packet_end) {
                 item.data = new uint8_t[item.length];
 
                 memcpy(item.data, &packet[read_ptr], item.length);
@@ -1715,8 +1532,7 @@ rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t* packet, size_t& read_ptr, 
             chunk.items.push_back(item);
         }
 
-        if (packet[read_ptr] == 0)
-        {
+        if (packet[read_ptr] == 0) {
             read_ptr += (4 - read_ptr % 4);
         }
 
@@ -1733,13 +1549,10 @@ rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t* packet, size_t& read_ptr, 
     } else {
         std::lock_guard prtcp_lock(participants_mutex_);
         // Deallocate previous frame from the buffer if it exists, it's going to get overwritten
-        if (participants_[sender_ssrc]->sdes_frame)
-        {
-            for (auto& chunk : participants_[sender_ssrc]->sdes_frame->chunks)
-            {
-                for (auto& item : chunk.items)
-                {
-                    delete[](uint8_t*)item.data;
+        if (participants_[sender_ssrc]->sdes_frame) {
+            for (auto &chunk: participants_[sender_ssrc]->sdes_frame->chunks) {
+                for (auto &item: chunk.items) {
+                    delete[](uint8_t *) item.data;
                     item.data = nullptr;
                 }
             }
@@ -1755,18 +1568,15 @@ rtp_error_t uvgrtp::rtcp::handle_sdes_packet(uint8_t* packet, size_t& read_ptr, 
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_bye_packet(uint8_t* packet, size_t& read_ptr, 
-    size_t packet_end, uvgrtp::frame::rtcp_header& header)
-{
-    (void)header; // TODO: Process BYE packet better
+rtp_error_t uvgrtp::rtcp::handle_bye_packet(uint8_t *packet, size_t &read_ptr,
+                                            size_t packet_end, uvgrtp::frame::rtcp_header &header) {
+    (void) header; // TODO: Process BYE packet better
 
-    for (size_t i = 0; i < packet_end; i += sizeof(uint32_t))
-    {
-        uint32_t ssrc = 0; 
+    for (size_t i = 0; i < packet_end; i += sizeof(uint32_t)) {
+        uint32_t ssrc = 0;
         read_ssrc(packet, read_ptr, ssrc);
 
-        if (!is_participant(ssrc))
-        {
+        if (!is_participant(ssrc)) {
             UVG_LOG_WARN("Participant %lu is not part of this group!", ssrc);
             continue;
         }
@@ -1784,9 +1594,8 @@ rtp_error_t uvgrtp::rtcp::handle_bye_packet(uint8_t* packet, size_t& read_ptr,
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
-    size_t packet_end, uvgrtp::frame::rtcp_header& header)
-{
+rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t *packet, size_t &read_ptr,
+                                            size_t packet_end, uvgrtp::frame::rtcp_header &header) {
     auto frame = new uvgrtp::frame::rtcp_app_packet;
     frame->header = header;
     read_ssrc(packet, read_ptr, frame->ssrc);
@@ -1797,21 +1606,16 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
     memcpy(frame->name, &packet[read_ptr], APP_NAME_SIZE);
     read_ptr += APP_NAME_SIZE;
 
-    if (strcmp((char*) frame->name, "UVG") == 0)
-    {
+    if (strcmp((char *) frame->name, "UVG") == 0) {
         return RTP_OK;
     }
 
-    if (frame->ssrc == own_ssrc)
-    {
+    if (frame->ssrc == own_ssrc) {
         UVG_LOG_WARN("It's our own SSRC. This will be ignored!");
         return RTP_OK;
-    }
-    else
-    {
+    } else {
         /* Deallocate previous frame from the buffer if it exists, it's going to get overwritten */
-        if (!is_participant(frame->ssrc))
-        {
+        if (!is_participant(frame->ssrc)) {
             UVG_LOG_WARN("Got an APP packet from an unknown participant");
             add_participant(frame->ssrc);
         }
@@ -1819,14 +1623,11 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
 
     frame->payload_len = packet_end - read_ptr;
 
-    if (frame->payload_len > 0)
-    {
+    if (frame->payload_len > 0) {
         // application data is saved to payload
         frame->payload = new uint8_t[frame->payload_len];
         memcpy(frame->payload, &packet[read_ptr], frame->payload_len);
-    }
-    else
-    {
+    } else {
         frame->payload = nullptr;
     }
 
@@ -1839,10 +1640,9 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
         app_hook_u_(std::unique_ptr<uvgrtp::frame::rtcp_app_packet>(frame));
     } else {
         std::lock_guard prtcp_lock(participants_mutex_);
-        if (participants_[frame->ssrc]->app_frame)
-        {
+        if (participants_[frame->ssrc]->app_frame) {
             delete[] participants_[frame->ssrc]->app_frame->payload;
-            delete   participants_[frame->ssrc]->app_frame;
+            delete participants_[frame->ssrc]->app_frame;
         }
 
         participants_[frame->ssrc]->app_frame = frame;
@@ -1852,17 +1652,15 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::send_rtcp_packet_to_participants(uint8_t* frame, uint32_t frame_size, bool encrypt)
-{
-    if (!frame)
-    {
+rtp_error_t uvgrtp::rtcp::send_rtcp_packet_to_participants(uint8_t *frame, uint32_t frame_size, bool encrypt) {
+    if (!frame) {
         UVG_LOG_ERROR("No frame given for sending");
         return RTP_GENERIC_ERROR;
     }
 
     rtp_error_t ret = RTP_OK;
 
-    if (encrypt && srtcp_ && 
+    if (encrypt && srtcp_ &&
         (ret = srtcp_->handle_rtcp_encryption(rce_flags_, rtcp_pkt_sent_count_, *ssrc_.get(), frame, frame_size)) != RTP_OK)
     {
         UVG_LOG_DEBUG("Encryption failed. Not sending packet");
@@ -1870,21 +1668,16 @@ rtp_error_t uvgrtp::rtcp::send_rtcp_packet_to_participants(uint8_t* frame, uint3
         return ret;
     }
 
-    for (auto& p : participants_)
-    {
+    for (auto &p: participants_) {
         std::lock_guard prtcp_lock(participants_mutex_);
-        if (p.second->socket != nullptr)
-        {
-            if ((ret = p.second->socket->sendto(p.second->address, frame, frame_size, 0)) != RTP_OK)
-            {
+        if (p.second->socket != nullptr) {
+            if ((ret = p.second->socket->sendto(p.second->address, frame, frame_size, 0)) != RTP_OK) {
                 UVG_LOG_ERROR("Sending rtcp packet with sendto() failed!");
                 break;
             }
 
             update_rtcp_bandwidth(frame_size);
-        }
-        else
-        {
+        } else {
             UVG_LOG_ERROR("Tried to send RTCP packet when socket does not exist!");
         }
     }
@@ -1892,14 +1685,11 @@ rtp_error_t uvgrtp::rtcp::send_rtcp_packet_to_participants(uint8_t* frame, uint3
     return ret;
 }
 
-uint32_t uvgrtp::rtcp::size_of_ready_app_packets() const
-{
+uint32_t uvgrtp::rtcp::size_of_ready_app_packets() const {
     uint32_t app_size = 0;
-    for (auto& app_name : app_packets_)
-    {
+    for (auto &app_name: app_packets_) {
         // TODO: Should we also send one per subtype?
-        if (!app_name.second.empty())
-        {
+        if (!app_name.second.empty()) {
             app_size += get_app_packet_size(app_name.second.front().payload_len);
         }
     }
@@ -1908,40 +1698,32 @@ uint32_t uvgrtp::rtcp::size_of_ready_app_packets() const
 }
 
 uint32_t uvgrtp::rtcp::size_of_compound_packet(uint16_t reports,
-    bool sr_packet, bool rr_packet, bool sdes_packet, uint32_t app_size, bool bye_packet) const
-{
+                                               bool sr_packet, bool rr_packet, bool sdes_packet, uint32_t app_size,
+                                               bool bye_packet) const {
     uint32_t compound_packet_size = 0;
 
-    if (sr_packet)
-    {  
+    if (sr_packet) {
         compound_packet_size = get_sr_packet_size(rce_flags_, reports);
         UVG_LOG_DEBUG("Sending SR. Compound packet size: %li", compound_packet_size);
-    }
-    else if (rr_packet)
-    {
+    } else if (rr_packet) {
         compound_packet_size = get_rr_packet_size(rce_flags_, reports);
         UVG_LOG_DEBUG("Sending RR. Compound packet size: %li", compound_packet_size);
-    }
-    else
-    {
+    } else {
         UVG_LOG_ERROR("RTCP compound packet must start with either SR or RR");
         return 0;
     }
 
-    if (sdes_packet)
-    {
+    if (sdes_packet) {
         compound_packet_size += get_sdes_packet_size(ourItems_);
         UVG_LOG_DEBUG("Sending SDES. Compound packet size: %li", compound_packet_size);
     }
 
-    if (app_size != 0)
-    {
+    if (app_size != 0) {
         compound_packet_size += app_size;
         UVG_LOG_DEBUG("Sending APP. Compound packet size: %li", compound_packet_size);
     }
 
-    if (bye_packet)
-    {
+    if (bye_packet) {
         compound_packet_size += get_bye_packet_size(bye_ssrcs_);
         UVG_LOG_DEBUG("Sending BYE. Compound packet size: %li", compound_packet_size);
     }
@@ -1949,8 +1731,7 @@ uint32_t uvgrtp::rtcp::size_of_compound_packet(uint16_t reports,
     return compound_packet_size;
 }
 
-rtp_error_t uvgrtp::rtcp::generate_report()
-{
+rtp_error_t uvgrtp::rtcp::generate_report() {
     std::lock_guard<std::mutex> lock(packet_mutex_);
     rtcp_pkt_sent_count_++;
 
@@ -1963,43 +1744,37 @@ rtp_error_t uvgrtp::rtcp::generate_report()
     // Unique lock unlocks when exiting the scope
     std::unique_lock prtcp_lock(participants_mutex_);
     uint8_t reports = 0;
-    for (auto& p : participants_)
-    {
-        if (p.second->stats.received_rtp_packet)
-        {
+    for (auto &p: participants_) {
+        if (p.second->stats.received_rtp_packet) {
             ++reports;
         }
     }
 
-    uint32_t compound_packet_size = size_of_compound_packet(reports, sr_packet, rr_packet, sdes_packet, app_packets_size, bye_packet);
-    
-    if (compound_packet_size == 0)
-    {
+    uint32_t compound_packet_size = size_of_compound_packet(reports, sr_packet, rr_packet, sdes_packet,
+                                                            app_packets_size, bye_packet);
+
+    if (compound_packet_size == 0) {
         UVG_LOG_WARN("Failed to get compound packet size");
         return RTP_GENERIC_ERROR;
-    }
-    else if (compound_packet_size > mtu_size_)
-    {
+    } else if (compound_packet_size > mtu_size_) {
         UVG_LOG_WARN("Generate RTCP packet is too large %lli/%lli, reports should be circled, but not implemented!",
-            compound_packet_size, mtu_size_);
+                     compound_packet_size, mtu_size_);
     }
 
-    uint8_t* frame = new uint8_t[compound_packet_size];
+    uint8_t *frame = new uint8_t[compound_packet_size];
     memset(frame, 0, compound_packet_size);
 
     // see https://datatracker.ietf.org/doc/html/rfc3550#section-6.4.1
 
     size_t write_ptr = 0;
     uint32_t ssrc = *ssrc_.get();
-    if (sr_packet)
-    {
+    if (sr_packet) {
         // sender reports have sender information in addition compared to receiver reports
         size_t sender_report_size = get_sr_packet_size(rce_flags_, reports);
 
         /* TODO: The clock would be better to start with first sent RTP packet.
          * In reality it should be provided by user which I think is implemented? */
-        if (clock_start_ == 0)
-        {
+        if (clock_start_ == 0) {
             clock_start_ = uvgrtp::clock::ntp::now();
             UVG_LOG_INFO("Set clock_start_");
         }
@@ -2009,14 +1784,14 @@ rtp_error_t uvgrtp::rtcp::generate_report()
         uint64_t ntp_ts = uvgrtp::clock::ntp::now();
 
         uint64_t expanded_ts_start = rtp_ts_start_;
-        uint64_t ts_since_start = (uint64_t)(uvgrtp::clock::ntp::diff(clock_start_, ntp_ts) * double(clock_rate_ / 1000));
+        uint64_t ts_since_start = (uint64_t) (uvgrtp::clock::ntp::diff(clock_start_, ntp_ts) *
+                                              double(clock_rate_ / 1000));
 
         uint64_t rtp_ts = expanded_ts_start + ts_since_start;
 
         if (!construct_rtcp_header(frame, write_ptr, sender_report_size, reports, uvgrtp::frame::RTCP_FT_SR) ||
             !construct_ssrc(frame, write_ptr, ssrc) ||
-            !construct_sender_info(frame, write_ptr, ntp_ts, rtp_ts, our_stats.sent_pkts, our_stats.sent_bytes))
-        {
+            !construct_sender_info(frame, write_ptr, ntp_ts, rtp_ts, our_stats.sent_pkts, our_stats.sent_bytes)) {
             UVG_LOG_ERROR("Failed to construct SR");
             return RTP_GENERIC_ERROR;
         }
@@ -2027,44 +1802,38 @@ rtp_error_t uvgrtp::rtcp::generate_report()
         size_t receiver_report_size = get_rr_packet_size(rce_flags_, reports);
 
         if (!construct_rtcp_header(frame, write_ptr, receiver_report_size, reports, uvgrtp::frame::RTCP_FT_RR) ||
-            !construct_ssrc(frame, write_ptr, ssrc))
-        {
+            !construct_ssrc(frame, write_ptr, ssrc)) {
             UVG_LOG_ERROR("Failed to construct RR");
             return RTP_GENERIC_ERROR;
         }
-    }
-    else
-    {
+    } else {
         // SR or RR is mandatory at the beginning
         return RTP_GENERIC_ERROR;
     }
 
     // the report blocks for sender or receiver report. Both have same reports.
-    for (auto& p : participants_)
-    {
+    for (auto &p: participants_) {
         // only add report blocks if we have received data from them
-        if (p.second->stats.received_rtp_packet)
-        {
+        if (p.second->stats.received_rtp_packet) {
             uint32_t dropped_packets = p.second->stats.dropped_pkts;
 
             // TODO: Fraction should be the number of packets lost compared to number of packets expected (see fraction lost in RFC 3550)
             // see https://datatracker.ietf.org/doc/html/rfc3550#appendix-A.3
-            
+
             //uint8_t fraction = dropped_packets ? p.second->stats.received_bytes / dropped_packets : 0;
             uint8_t fraction = 0; // disabled, because it was incorrect
 
-            uint64_t diff = (u_long)uvgrtp::clock::hrc::diff_now(p.second->stats.sr_ts);
-            uint32_t dlrs = (uint32_t)uvgrtp::clock::ms_to_jiffies(diff);
+            uint64_t diff = (u_long) uvgrtp::clock::hrc::diff_now(p.second->stats.sr_ts);
+            uint32_t dlrs = (uint32_t) uvgrtp::clock::ms_to_jiffies(diff);
 
             /* calculate delay of last SR only if SR has been received at least once */
-            if (p.second->stats.lsr == 0)
-            {
+            if (p.second->stats.lsr == 0) {
                 dlrs = 0;
             }
 
             construct_report_block(frame, write_ptr, p.first, fraction, dropped_packets,
-                p.second->stats.cycles, p.second->stats.max_seq, (uint32_t)p.second->stats.jitter, 
-                p.second->stats.lsr, dlrs);
+                                   p.second->stats.cycles, p.second->stats.max_seq, (uint32_t) p.second->stats.jitter,
+                                   p.second->stats.lsr, dlrs);
 
             // we only send reports if there is something to report since last report
             p.second->stats.received_rtp_packet = false;
@@ -2072,44 +1841,39 @@ rtp_error_t uvgrtp::rtcp::generate_report()
     }
     prtcp_lock.unlock(); // End of critical section involving participants_
 
-    if (sdes_packet)
-    {
+    if (sdes_packet) {
         uvgrtp::frame::rtcp_sdes_chunk chunk;
         chunk.items = ourItems_;
         chunk.ssrc = *ssrc_.get();
 
         // add the SDES packet after the SR/RR, mandatory, must contain CNAME
         if (!construct_rtcp_header(frame, write_ptr, get_sdes_packet_size(ourItems_), num_receivers_,
-            uvgrtp::frame::RTCP_FT_SDES) ||
-            !construct_sdes_chunk(frame, write_ptr, chunk))
-        {
+                                   uvgrtp::frame::RTCP_FT_SDES) ||
+            !construct_sdes_chunk(frame, write_ptr, chunk)) {
             UVG_LOG_ERROR("Failed to add SDES packet");
             delete[] frame;
             return RTP_GENERIC_ERROR;
         }
     }
 
-    if (app_packets_size != 0)
-    {
-        for (auto& app_name : app_packets_)
-        {
+    if (app_packets_size != 0) {
+        for (auto &app_name: app_packets_) {
             // we send one packet per APP name
 
             // TODO: Should we also send one per subtype?
-            if (!app_name.second.empty())
-            {
+            if (!app_name.second.empty()) {
                 // take the oldest APP packet and send it
-                rtcp_app_packet& next_packet = app_name.second.front();
+                rtcp_app_packet &next_packet = app_name.second.front();
 
                 uint8_t secondField = (next_packet.subtype & 0x1f);
 
                 uint32_t packet_size = get_app_packet_size(next_packet.payload_len);
 
                 if (!construct_rtcp_header(frame, write_ptr, packet_size, secondField,
-                    uvgrtp::frame::RTCP_FT_APP) ||
+                                           uvgrtp::frame::RTCP_FT_APP) ||
                     !construct_ssrc(frame, write_ptr, ssrc) ||
-                    !construct_app_packet(frame, write_ptr, next_packet.name, next_packet.payload, next_packet.payload_len))
-                {
+                    !construct_app_packet(frame, write_ptr, next_packet.name, next_packet.payload,
+                                          next_packet.payload_len)) {
                     UVG_LOG_ERROR("Failed to construct APP packet");
                     delete[] frame;
                     app_name.second.pop_front();
@@ -2121,14 +1885,12 @@ rtp_error_t uvgrtp::rtcp::generate_report()
     }
 
     // BYE is last if it is sent
-    if (bye_packet)
-    {
+    if (bye_packet) {
         // header construction does not add our ssrc for BYE
         uint8_t secondField = (bye_ssrcs_.size() & 0x1f);
         if (!construct_rtcp_header(frame, write_ptr, get_bye_packet_size(bye_ssrcs_), secondField,
-            uvgrtp::frame::RTCP_FT_BYE) ||
-            !construct_bye_packet(frame, write_ptr, bye_ssrcs_))
-        {
+                                   uvgrtp::frame::RTCP_FT_BYE) ||
+            !construct_bye_packet(frame, write_ptr, bye_ssrcs_)) {
             bye_ssrcs_.clear();
             UVG_LOG_ERROR("Failed to construct BYE");
             delete[] frame;
@@ -2137,18 +1899,16 @@ rtp_error_t uvgrtp::rtcp::generate_report()
 
         bye_ssrcs_.clear();
     }
-    
+
 
     UVG_LOG_DEBUG("Sending RTCP report compound packet, Total size: %lli",
-        compound_packet_size);
+                  compound_packet_size);
 
     return send_rtcp_packet_to_participants(frame, compound_packet_size, true);
 }
 
-rtp_error_t uvgrtp::rtcp::send_sdes_packet(const std::vector<uvgrtp::frame::rtcp_sdes_item>& items)
-{
-    if (items.empty())
-    {
+rtp_error_t uvgrtp::rtcp::send_sdes_packet(const std::vector<uvgrtp::frame::rtcp_sdes_item> &items) {
+    if (items.empty()) {
         UVG_LOG_ERROR("Cannot send an empty SDES packet!");
         return RTP_INVALID_VALUE;
     }
@@ -2160,11 +1920,9 @@ rtp_error_t uvgrtp::rtcp::send_sdes_packet(const std::vector<uvgrtp::frame::rtcp
     return ret;
 }
 
-rtp_error_t uvgrtp::rtcp::send_bye_packet(std::vector<uint32_t> ssrcs)
-{
+rtp_error_t uvgrtp::rtcp::send_bye_packet(std::vector<uint32_t> ssrcs) {
     // ssrcs contains all our ssrcs which we usually have one unless we are a mixer
-    if (ssrcs.empty())
-    {
+    if (ssrcs.empty()) {
         UVG_LOG_WARN("Source Count in RTCP BYE packet is 0. Not sending.");
     }
     packet_mutex_.lock();
@@ -2174,14 +1932,12 @@ rtp_error_t uvgrtp::rtcp::send_bye_packet(std::vector<uint32_t> ssrcs)
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::send_app_packet(const char* name, uint8_t subtype,
-    uint32_t payload_len, const uint8_t* payload)
-{
+rtp_error_t uvgrtp::rtcp::send_app_packet(const char *name, uint8_t subtype,
+                                          uint32_t payload_len, const uint8_t *payload) {
     packet_mutex_.lock();
-    if (!app_packets_[name].empty())
-    {
+    if (!app_packets_[name].empty()) {
         UVG_LOG_DEBUG("Adding a new APP packet for sending when %llu packets are waiting to be sent",
-            app_packets_[name].size());
+                      app_packets_[name].size());
     }
     app_packets_[name].emplace_back(name, subtype, payload_len, payload);
     packet_mutex_.unlock();
@@ -2189,34 +1945,28 @@ rtp_error_t uvgrtp::rtcp::send_app_packet(const char* name, uint8_t subtype,
     return RTP_OK;
 }
 
-uint32_t uvgrtp::rtcp::get_rtcp_interval_ms() const 
-{
+uint32_t uvgrtp::rtcp::get_rtcp_interval_ms() const {
     return interval_ms_;
 }
 
-void uvgrtp::rtcp::set_session_bandwidth(uint32_t kbps)
-{
-    interval_ms_ = 1000*360 / kbps; // the reduced minimum (see section 6.2 in RFC 3550)
+void uvgrtp::rtcp::set_session_bandwidth(uint32_t kbps) {
+    interval_ms_ = 1000 * 360 / kbps; // the reduced minimum (see section 6.2 in RFC 3550)
 
-    if (interval_ms_ > DEFAULT_RTCP_INTERVAL_MS)
-    {
+    if (interval_ms_ > DEFAULT_RTCP_INTERVAL_MS) {
         interval_ms_ = DEFAULT_RTCP_INTERVAL_MS;
     }
     // TODO: This should follow the algorithm specified in RFC 3550 appendix-A.7
 }
 
-void uvgrtp::rtcp::set_payload_size(size_t mtu_size)
-{
+void uvgrtp::rtcp::set_payload_size(size_t mtu_size) {
     mtu_size_ = mtu_size;
 }
 
-void uvgrtp::rtcp::set_ecn_aggregation_time_window(uint32_t time_window_in_ms)
-{
+void uvgrtp::rtcp::set_ecn_aggregation_time_window(uint32_t time_window_in_ms) {
     ecn_aggregation_time_window_ms_ = time_window_in_ms;
 }
 
-rtp_error_t uvgrtp::rtcp::generate_ecn_report()
-{
+rtp_error_t uvgrtp::rtcp::generate_ecn_report() {
     if (our_role_ != RECEIVER)
         return RTP_NOT_FOUND;
 
@@ -2229,25 +1979,25 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
     size_t write_ptr = 0;
     uint32_t ssrc = *ssrc_.get();
 
-    uint8_t* frame = new uint8_t[report_size];
+    uint8_t *frame = new uint8_t[report_size];
     memset(frame, 0, report_size);
 
-    if (!construct_rtcp_header(frame, write_ptr, report_size, reports, uvgrtp::frame::RTCP_RTP_FB))
-    {
+    if (!construct_rtcp_header(frame, write_ptr, report_size, reports, uvgrtp::frame::RTCP_RTP_FB)) {
         UVG_LOG_ERROR("Failed construct RTCP header.");
         return RTP_GENERIC_ERROR;
     }
 
-    for (auto& p : participants_)
-    {
+    for (auto &p: participants_) {
         uint32_t packet_count_tw = p.second->receiver_ecn_stats.packet_count_tw;
         uint32_t ect_ce_count_tw = p.second->receiver_ecn_stats.ect_ce_count_tw;
+        uint32_t capacity_Kbits = p.second->receiver_ecn_stats.capacityKbits;
 
-        construct_ecn_report(frame, write_ptr, ssrc, packet_count_tw, ect_ce_count_tw);
+        construct_ecn_report(frame, write_ptr, ssrc, packet_count_tw, ect_ce_count_tw, capacity_Kbits);
 
         p.second->receiver_ecn_stats.packet_count_tw = 0;
         p.second->receiver_ecn_stats.ect_ce_count_tw = 0;
         p.second->receiver_ecn_stats.ext_highest_seq_num = 0;
+        p.second->receiver_ecn_stats.bytesInFrame = 0;
     }
 
     prtcp_lock.unlock();
@@ -2257,14 +2007,36 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
     return send_rtcp_packet_to_participants(frame, report_size, true);
 }
 
-rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uint32_t ssrc, int ecn_bit)
-{
-    if (our_role_ == RECEIVER)
-    {
+rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uvgrtp::frame::rtp_header *header, int ecn_bit) {
+    if (our_role_ == RECEIVER) {
         if (ecn_bit == ECN_ECT_CE)
-            participants_[ssrc]->receiver_ecn_stats.ect_ce_count_tw++;
+            participants_[header->ssrc]->receiver_ecn_stats.ect_ce_count_tw++;
+        // last fragment of frame, estimate capacity
+        long nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        if (header->marker == 1) {
+            long startUs = participants_[header->ssrc]->receiver_ecn_stats.startTimeFrameUs;
+            long diffUs = nowUs - startUs;
+            long byteInFrame = participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame;
 
-        participants_[ssrc]->receiver_ecn_stats.packet_count_tw++;
+            uint32_t capacityKbits = (byteInFrame * 1e3 * 8) / diffUs;
+            UVG_LOG_DEBUG("frame %d byteInFrame %d diffUs %d capacityKbits %d", header->timestamp, byteInFrame, diffUs,
+                          capacityKbits);
+            if (capacityKbits != participants_[header->ssrc]->receiver_ecn_stats.capacityKbits) {
+                participants_[header->ssrc]->receiver_ecn_stats.capacityKbits = capacityKbits;
+            }
+        }
+        //new frame
+        if (header->timestamp != participants_[header->ssrc]->receiver_ecn_stats.lastTs) {
+            //  UVG_LOG_DEBUG("start of frame %d", header->timestamp);
+            participants_[header->ssrc]->receiver_ecn_stats.startTimeFrameUs = nowUs;
+            participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame = 0;
+
+        }
+
+        participants_[header->ssrc]->receiver_ecn_stats.lastTs = header->timestamp;
+        participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw++;
+        participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame += MAX_IPV4_PAYLOAD;
 
         return RTP_OK;
     }
@@ -2272,27 +2044,24 @@ rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uint32_t ssrc, int ecn_
     return RTP_GENERIC_ERROR;
 }
 
-rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uint32_t ssrc, int ecn_bit)
-{
+rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uvgrtp::frame::rtp_header *header, int ecn_bit) {
     rtp_error_t result = RTP_OK;
 
-    auto *rtcp = (uvgrtp::rtcp *)arg;
+    auto *rtcp = (uvgrtp::rtcp *) arg;
 
-    if (rtcp->is_participant(ssrc))
-        result = rtcp->update_ecn_receiver_statistics(ssrc, ecn_bit);
+    if (rtcp->is_participant(header->ssrc))
+        result = rtcp->update_ecn_receiver_statistics(header, ecn_bit);
 
     return result;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, size_t packet_end,
-                              uvgrtp::frame::rtcp_header& header)
-{
+rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
+                                            uvgrtp::frame::rtcp_header &header) {
     auto frame = new uvgrtp::frame::rtcp_ecn_report;
     frame->header = header;
 
     read_ssrc(buffer, read_ptr, frame->ssrc);
-    if (!is_participant(frame->ssrc))
-    {
+    if (!is_participant(frame->ssrc)) {
         UVG_LOG_INFO("Got ECN report from unknown participant SSRC %lu, wait until SR will add it", frame->ssrc);
         return RTP_NOT_FOUND;
     }
@@ -2301,9 +2070,10 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t* buffer, size_t& read_ptr, s
         UVG_LOG_WARN("Multiple ECN reports, TODO: Have to handle it!");
 
     participants_mutex_.lock();
-    participants_[frame->ssrc];
-    frame->packet_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr]);
-    frame->ect_ce_count_tw = ntohl(*(uint32_t*)& buffer[read_ptr + 4]);
+    //participants_[frame->ssrc];
+    frame->packet_count_tw = ntohl(*(uint32_t *) &buffer[read_ptr]);
+    frame->ect_ce_count_tw = ntohl(*(uint32_t *) &buffer[read_ptr + 4]);
+    frame->capacity_kbits = ntohl(*(uint32_t *) &buffer[read_ptr + 8]);
     participants_mutex_.unlock();
 
     read_ptr += ECN_REPORT_BLOCK_SIZE;

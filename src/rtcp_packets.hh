@@ -12,7 +12,7 @@ namespace uvgrtp
     const uint16_t SENDER_INFO_SIZE = 20;
     const uint16_t REPORT_BLOCK_SIZE = 24;
     const uint16_t APP_NAME_SIZE = 4;
-    const uint16_t ECN_REPORT_BLOCK_SIZE = 8;
+    const uint16_t ECN_REPORT_BLOCK_SIZE = 12;
 
     uint32_t get_sr_packet_size(int rce_flags, uint16_t reports);
     uint32_t get_rr_packet_size(int rce_flags, uint16_t reports);
@@ -50,5 +50,6 @@ namespace uvgrtp
     // ECN Report
     bool construct_ecn_report(uint8_t* frame, size_t& ptr, uint32_t ssrc,
                               uint32_t packet_count_tw,
-                              uint32_t ect_ce_count_tw);
+                              uint32_t ect_ce_count_tw,
+                              uint32_t capacity_kbits);
 }

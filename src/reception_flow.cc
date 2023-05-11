@@ -368,10 +368,10 @@ void uvgrtp::reception_flow::call_aux_handlers(uint32_t key, int rce_flags, uvgr
     }
 }
 
-void uvgrtp::reception_flow::call_ecn_handlers(uint32_t key, uint32_t ssrc, int ecn_bit) {
+void uvgrtp::reception_flow::call_ecn_handlers(uint32_t key, uvgrtp::frame::rtp_header* header, int ecn_bit) {
     auto& ecn_handler = packet_handlers_[key].ecn;
     if (ecn_handler.handler != nullptr && ecn_handler.arg != nullptr)
-        ecn_handler.handler(ecn_handler.arg, ssrc, ecn_bit);
+        ecn_handler.handler(ecn_handler.arg, header, ecn_bit);
 }
 
 void uvgrtp::reception_flow::receiver(std::shared_ptr<uvgrtp::socket> socket)
@@ -502,7 +502,9 @@ void uvgrtp::reception_flow::process_packet(int rce_flags)
                                                     rce_flags,
                                                     &frame);
 
-                    call_ecn_handlers(handler.first, frame->header.ssrc, ring_buffer_[ring_read_index_].ecn_bit);
+                    uvgrtp::frame::rtp_header* header = &frame->header;
+
+                    call_ecn_handlers(handler.first, header, ring_buffer_[ring_read_index_].ecn_bit);
 
                     // Here we don't lock ring mutex because the chaging is only done above. 
                     // NOTE: If there is a need for multiple processing threads, the read should be guarded

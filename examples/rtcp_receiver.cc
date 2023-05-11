@@ -34,12 +34,12 @@ void cleanup(uvgrtp::context& ctx, uvgrtp::session *session, uvgrtp::media_strea
 
 int main(int argc, char *argv[])
 {
-    std::cout << "Starting uvgRTP RTCP hook example" << std::endl;
     if (argc != 2) {
         std::cerr << "Usage: <sender ip>" << std::endl;
         return EXIT_FAILURE;
     }
     std::string senderIp = argv[1];
+    std::cout << "Starting uvgRTP RTCP hook senderIp " << senderIp << std::endl;
 
     // Creation of RTP stream. See sending example for more details
     uvgrtp::context ctx;
@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
     uvgrtp::media_stream *remote_stream = remote_session->create_stream(REMOTE_PORT, LOCAL_PORT,
                                                                         RTP_FORMAT_GENERIC, flags);
 
-    remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 500);
+    remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 100);
 
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender

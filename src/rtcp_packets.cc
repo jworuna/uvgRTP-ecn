@@ -170,11 +170,13 @@ uint32_t uvgrtp::get_ecn_packet_size(uint16_t reports) {
 
 bool uvgrtp::construct_ecn_report(uint8_t *frame, size_t &ptr, uint32_t ssrc,
                                   uint32_t packet_count_tw,
-                                  uint32_t ect_ce_count_tw)
+                                  uint32_t ect_ce_count_tw,
+                                  uint32_t capacity_kbits)
 {
     SET_NEXT_FIELD_32(frame, ptr, htonl(ssrc));
     SET_NEXT_FIELD_32(frame, ptr, htonl(packet_count_tw));
     SET_NEXT_FIELD_32(frame, ptr, htonl(ect_ce_count_tw));
+    SET_NEXT_FIELD_32(frame, ptr, htonl(capacity_kbits));
 
     return true;
 }
