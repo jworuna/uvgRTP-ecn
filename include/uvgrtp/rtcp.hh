@@ -36,6 +36,7 @@ namespace uvgrtp {
         uint32_t lastTs = 0;
         uint32_t bytesInFrame = 0;
         uint32_t capacityKbits = 0;
+        uint32_t early_feedback_mode = 0;
     };
 
     struct sender_statistics {
@@ -145,7 +146,7 @@ namespace uvgrtp {
              * Return RTP_OK on success and RTP_ERROR on error */
             rtp_error_t generate_ecn_report();
 
-            /* Handle incoming RTCP packet (first make sure it's a valid RTCP packet)
+        /* Handle incoming RTCP packet (first make sure it's a valid RTCP packet)
              * This function will call one of the above functions internally
              *
              * Return RTP_OK on success and RTP_ERROR on error */

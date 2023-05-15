@@ -175,6 +175,7 @@ namespace uvgrtp {
             uint32_t packet_count_tw = 0;
             uint32_t ect_ce_count_tw = 0;
             uint32_t capacity_kbits = 0;
+            uint32_t early_feedback_mode = 0;
 
             //uint32_t ext_highest_seq_num = 0;
             //uint32_t ect_0 = 0;

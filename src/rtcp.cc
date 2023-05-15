@@ -1991,8 +1991,10 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report() {
         uint32_t packet_count_tw = p.second->receiver_ecn_stats.packet_count_tw;
         uint32_t ect_ce_count_tw = p.second->receiver_ecn_stats.ect_ce_count_tw;
         uint32_t capacity_Kbits = p.second->receiver_ecn_stats.capacityKbits;
+        uint32_t early_feedback_mode = p.second->receiver_ecn_stats.early_feedback_mode;
 
-        construct_ecn_report(frame, write_ptr, ssrc, packet_count_tw, ect_ce_count_tw, capacity_Kbits);
+        construct_ecn_report(frame, write_ptr, ssrc, packet_count_tw, ect_ce_count_tw, capacity_Kbits,
+                             early_feedback_mode);
 
         p.second->receiver_ecn_stats.packet_count_tw = 0;
         p.second->receiver_ecn_stats.ect_ce_count_tw = 0;
@@ -2031,7 +2033,14 @@ rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uvgrtp::frame::rtp_head
             //  UVG_LOG_DEBUG("start of frame %d", header->timestamp);
             participants_[header->ssrc]->receiver_ecn_stats.startTimeFrameUs = nowUs;
             participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame = 0;
-
+            if (ecn_bit == ECN_ECT_CE) {
+                //first packet in frame congested, send early feedback
+                participants_[header->ssrc]->receiver_ecn_stats.early_feedback_mode = true;
+                rtp_error_t ret = generate_ecn_report();
+                if (ret != RTP_OK && ret != RTP_NOT_READY)
+                    UVG_LOG_ERROR("Failed to send RTCP status report!");
+            } else
+                participants_[header->ssrc]->receiver_ecn_stats.early_feedback_mode = false;
         }
 
         participants_[header->ssrc]->receiver_ecn_stats.lastTs = header->timestamp;
@@ -2055,7 +2064,8 @@ rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uvgrtp::frame::rtp_header 
     return result;
 }
 
-rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
+rtp_error_t uvgrtp::rtcp::
+handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
                                             uvgrtp::frame::rtcp_header &header) {
     auto frame = new uvgrtp::frame::rtcp_ecn_report;
     frame->header = header;
@@ -2074,6 +2084,8 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, s
     frame->packet_count_tw = ntohl(*(uint32_t *) &buffer[read_ptr]);
     frame->ect_ce_count_tw = ntohl(*(uint32_t *) &buffer[read_ptr + 4]);
     frame->capacity_kbits = ntohl(*(uint32_t *) &buffer[read_ptr + 8]);
+    frame->early_feedback_mode = ntohl(*(uint32_t *) &buffer[read_ptr + 12]);
+
     participants_mutex_.unlock();
 
     read_ptr += ECN_REPORT_BLOCK_SIZE;

@@ -35,8 +35,8 @@ void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int fra
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media_stream *send);
 
 void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
-    printf("ECN Report from: %u, packets: %i, ecn-ce: %i, capacity: %i kbits\n", frame->ssrc, frame->packet_count_tw,
-           frame->ect_ce_count_tw,frame->capacity_kbits);
+    printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i\n", frame->ssrc, frame->packet_count_tw,
+           frame->ect_ce_count_tw,frame->capacity_kbits,frame->early_feedback_mode);
 
     delete frame;
 }
