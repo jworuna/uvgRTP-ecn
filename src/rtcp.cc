@@ -2252,8 +2252,6 @@ rtp_error_t uvgrtp::rtcp::generate_ecn_report()
 
     prtcp_lock.unlock();
 
-    UVG_LOG_DEBUG("Sending ECN RTCP report with size, Total size: %lli", report_size);
-
     return send_rtcp_packet_to_participants(frame, report_size, true);
 }
 
