@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <random>
 
 // TODO: get these from socket?
 const int MAX_MSG_COUNT   = 5000;
@@ -186,6 +187,10 @@ namespace uvgrtp {
             uint64_t frames_since_sync_ = 0;
 
             bool force_sync_ = false;
+            uint64_t previousBitrate_ = 0;
+            uint64_t previousNanoToWait_ = 0;
+            std::uniform_real_distribution<double> unif_;
+            std::default_random_engine re;
     };
 }
 

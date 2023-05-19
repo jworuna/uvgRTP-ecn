@@ -32,7 +32,9 @@ uvgrtp::frame_queue::frame_queue(std::shared_ptr<uvgrtp::socket> socket, std::sh
     fps_(false),
     frame_interval_(),
     fps_sync_point_(),
-    frames_since_sync_(0)
+    frames_since_sync_(0),
+    unif_(0, 1.0),
+    re(std::random_device{}())
 {}
 
 uvgrtp::frame_queue::~frame_queue()
@@ -268,39 +270,79 @@ rtp_error_t uvgrtp::frame_queue::enqueue_message(buf_vec& buffers)
     return RTP_OK;
 }
 
+
 rtp_error_t uvgrtp::frame_queue::flush_queue_paced()
 {
     size_t number_of_packets = active_->packets.size();
-    auto pti = (long)(1e9 / (double)(30 * number_of_packets));
+    uint64_t number_packets_sent = 0;
+
+    uint64_t current_bitrate = (number_of_packets * 1500) * 30 * 8;
+    bool bitrate_is_increasing = current_bitrate >= previousBitrate_;
+    previousBitrate_ = current_bitrate;
+
+    bool probing_enabled = true;
+    double probing_probability = 0.05;
+    double probing_capacity_overshoot = 2.5;
+    uint64_t default_numb_of_packets = 1;
+
+    auto ms_per_sec = 1000.0 / (((double)current_bitrate/8)/1500.0);
+    auto num_packets_per_iteration_during_increase = (uint64_t)(14.0 / ms_per_sec);
+    uint64_t num_packets_to_send_per_iteration = 1;
+    if (probing_enabled)
+        num_packets_to_send_per_iteration = bitrate_is_increasing
+                ? num_packets_per_iteration_during_increase : default_numb_of_packets;
 
     rtp_error_t result = RTP_OK;
 
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < active_->packets.size(); i++)
+    while (number_packets_sent < number_of_packets)
     {
-        if (!(rce_flags_ & RCE_ECN_TRAFFIC))
-            result = socket_->sendto(active_->packets[i], 0);
-        else
+        auto num_packets_to_send = num_packets_to_send_per_iteration;
+        if (num_packets_to_send > 1 && number_packets_sent + num_packets_to_send > number_of_packets)
+            num_packets_to_send = (uint64_t)(number_of_packets - number_packets_sent);
+
+        uint64_t number_of_send_bits = 0;
+        for (size_t i = 0; i < number_of_packets; i++)
         {
+            if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+                result = socket_->sendto(active_->packets[i], 0);
+            else
+            {
 #ifdef _WIN32
-            result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+                result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
 #else
-            result = socket_->sendto(active_->packets[i], 0);
+                result = socket_->sendto(active_->packets[i], 0);
 #endif
-        }
+            }
 
-        if (result != RTP_OK) {
-            UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
-            (void)deinit_transaction();
-            return RTP_SEND_ERROR;
-        }
+            if (result != RTP_OK) {
+                UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
+                (void)deinit_transaction();
+                return RTP_SEND_ERROR;
+            }
 
-        auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::high_resolution_clock::now() - start_time);
-        auto target_time = std::chrono::nanoseconds(i * pti);
-        if (elapsed_time < target_time)
-            std::this_thread::sleep_for(target_time - elapsed_time);
+            for (const auto &packet : active_->packets[i])
+                number_of_send_bits += packet.first;
+            number_of_send_bits *= 8;
+
+            auto nano_to_wait = (uint64_t)(((double)number_of_send_bits/(double)current_bitrate) * 1000000000);
+            auto should_probe = probing_enabled && bitrate_is_increasing && (unif_(re) < probing_probability);
+            auto capacity_overshoot = should_probe ? probing_capacity_overshoot : 0;
+            nano_to_wait = (uint64_t)(0.95 * (double)nano_to_wait * 1.0 / (1 + capacity_overshoot));
+            auto chrono_nano = std::chrono::nanoseconds(nano_to_wait);
+            auto previous_nano = std::chrono::nanoseconds(previousNanoToWait_);
+
+            auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::high_resolution_clock::now().time_since_epoch());
+
+            while(elapsed_time - previous_nano < chrono_nano)
+            {
+                elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::high_resolution_clock::now().time_since_epoch());
+            }
+
+            previousNanoToWait_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        }
     }
 
     return deinit_transaction();
