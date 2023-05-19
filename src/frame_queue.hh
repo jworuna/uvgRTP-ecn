@@ -108,6 +108,8 @@ namespace uvgrtp {
              * return RTP_SEND_ERROR if send fails */
             rtp_error_t flush_queue();
 
+            rtp_error_t flush_queue_paced();
+
             /* Media may have extra headers (f.ex. NAL and FU headers for HEVC).
              * These headers must be valid until the message is sent (ie. they cannot be saved to
              * caller's stack).

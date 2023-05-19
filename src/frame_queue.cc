@@ -268,6 +268,44 @@ rtp_error_t uvgrtp::frame_queue::enqueue_message(buf_vec& buffers)
     return RTP_OK;
 }
 
+rtp_error_t uvgrtp::frame_queue::flush_queue_paced()
+{
+    size_t number_of_packets = active_->packets.size();
+    auto pti = (long)(1e9 / (double)(30 * number_of_packets));
+
+    rtp_error_t result = RTP_OK;
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < active_->packets.size(); i++)
+    {
+        if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+            result = socket_->sendto(active_->packets[i], 0);
+        else
+        {
+#ifdef _WIN32
+            result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+#else
+            result = socket_->sendto(active_->packets[i], 0);
+#endif
+        }
+
+        if (result != RTP_OK) {
+            UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
+            (void)deinit_transaction();
+            return RTP_SEND_ERROR;
+        }
+
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::high_resolution_clock::now() - start_time);
+        auto target_time = std::chrono::nanoseconds(i * pti);
+        if (elapsed_time < target_time)
+            std::this_thread::sleep_for(target_time - elapsed_time);
+    }
+
+    return deinit_transaction();
+}
+
 rtp_error_t uvgrtp::frame_queue::flush_queue()
 {
     if (active_->packets.empty()) {
@@ -279,7 +317,10 @@ rtp_error_t uvgrtp::frame_queue::flush_queue()
     /* set the marker bit of the last packet to 1 */
     if (active_->packets.size() > 1)
         ((uint8_t *)&active_->rtp_headers[active_->rtphdr_ptr - 1])[1] |= (1 << 7);
-    
+
+    if ((rce_flags_ & RCE_ECN_PACKET_PACER))
+        return flush_queue_paced();
+
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 
     if ((rce_flags_ & RCE_FRAME_RATE) && fps_)

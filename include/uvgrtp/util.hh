@@ -295,8 +295,10 @@ enum RTP_CTX_ENABLE_FLAGS {
      */
     RCE_ECN_ECT_1                    = 1 << 23,
 
+    RCE_ECN_PACKET_PACER            = 1 << 24,
+
     /// \cond DO_NOT_DOCUMENT
-    RCE_LAST                        = 1 << 24
+    RCE_LAST                        = 1 << 25
    /// \endcond
 }; // maximum is 1 << 30 for int
 

@@ -15,7 +15,7 @@ constexpr char REMOTE_ADDRESS[] = "127.0.0.1";
 constexpr uint16_t REMOTE_PORT = 8890;
 
 // the parameters of demostration
-constexpr size_t PAYLOAD_LEN = 100;
+constexpr size_t PAYLOAD_LEN = 5000;
 constexpr int    AMOUNT_OF_TEST_PACKETS = 100;
 constexpr auto   END_WAIT = std::chrono::seconds(5);
 
@@ -42,7 +42,7 @@ int main(void)
      *
      * In this example, we have one media stream with the remote participant: H265 */
 
-    int flags = RCE_SEND_ONLY;
+    int flags = RCE_SEND_ONLY | RCE_ECN_PACKET_PACER;
     uvgrtp::media_stream *hevc = sess->create_stream(REMOTE_PORT, RTP_FORMAT_H265, flags);
 
     if (hevc)
