@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <thread>
+#include <mutex>
 
 /* RTCP (RTP Control Protocol) is used to monitor the quality
  * of the RTP stream. This example demonstrates the usage of
@@ -16,41 +18,53 @@
 constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
-constexpr uint16_t PAYLOAD_LEN = 40000;
+constexpr uint16_t PAYLOAD_LEN = 200000;
+constexpr uint16_t MIN_PAYLOAD_LEN_BYTE = 1400 * 3;
+constexpr uint16_t MIN_BITRATE_KBITS = 500;
+
 constexpr uint16_t FRAME_RATE = 30;
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
 constexpr int PACKET_INTERVAL_MS = 1000 / FRAME_RATE;
-
-/* uvgRTP calls this hook when it receives an RTCP Report
- *
- * NOTE: If application uses hook, it must also free the frame when it's done with i
- * Frame must deallocated using uvgrtp::frame::dealloc_frame() function */
-void receiver_hook(uvgrtp::frame::rtcp_receiver_report *frame);
-
-void sender_hook(uvgrtp::frame::rtcp_sender_report *frame);
+bool linkCongested = false;
+int capacityKbits = MIN_BITRATE_KBITS * 4;
+float linkUsageScale = 0.6;
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index);
 
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media_stream *send);
 
 void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
-    printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i\n", frame->ssrc, frame->packet_count_tw,
-           frame->ect_ce_count_tw,frame->capacity_kbits,frame->early_feedback_mode);
+    printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i\n", frame->ssrc,
+           frame->packet_count_tw,
+           frame->ect_ce_count_tw, frame->capacity_kbits, frame->early_feedback_mode);
+
+    if (frame->capacity_kbits > 0)
+        capacityKbits = frame->capacity_kbits;
+    if (!linkCongested && frame->early_feedback_mode) {
+        linkCongested = true;
+        capacityKbits = MIN_BITRATE_KBITS;
+        std::cout << "congestion experienced, use min bitrate" << MIN_BITRATE_KBITS << " bkits" << std::endl;
+    } else if (linkCongested && !frame->early_feedback_mode) {
+        linkCongested = false;
+        std::cout << "congestion over, bitrate " << capacityKbits << " kbits " << std::endl;
+    }
 
     delete frame;
 }
 
 int main(int argc, char *argv[]) {
     std::cout << "Starting uvgRTP RTCP hook example" << std::endl;
-    if (argc != 3) {
-        std::cerr << "Usage: <receiverIp> <test duration s>" << std::endl;
+    if (argc != 4) {
+        std::cerr << "Usage: <receiverIp> <link usage [0..1]> <test duration s>" << std::endl;
         return EXIT_FAILURE;
     }
     std::string receiverIp = argv[1];
-    int testDurationS = strtol(argv[2], NULL, 10);
+    linkUsageScale = atof(argv[2]);
+    int testDurationS = strtol(argv[3], NULL, 10);
 
-    std::cout << "Starting RTCP ECN sending example receiverIp " << receiverIp << " test duration s> " << testDurationS
+    std::cout << "Starting RTCP ECN sending example receiverIp " << receiverIp << " test duration s " << testDurationS
+              << " link usage scale " << linkUsageScale
               << std::endl;
 
     // Creation of RTP stream. See sending example for more details
@@ -67,102 +81,39 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
-    // that wrong thinking. Sender reports are sent by the sender
+    long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    long endMs = startMs + testDurationS * 1e3;
+    long nowMs = 0;
+    int i = 0;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    while (nowMs < endMs) {
+        int frameSizeByte = (capacityKbits * 1000 * linkUsageScale) / (FRAME_RATE * 8);
+        std::cout << "Sending RTP frame size " << frameSizeByte << " byte" << std::endl;
 
-    /* In this example code, local_stream acts as the sender and because it is the only sender,
-     * it does not send any RTCP frames but only receives RTCP Receiver reports from remote_stream.
-     *
-     * Because local_stream only sends and remote_stream only receives, we only need to install
-     * receive hook for local_stream.
-     *
-     * By default, all media_stream that have RTCP enabled start as receivers and only if/when they 
-     * call push_frame() are they converted into senders. */
-
-    if (!sender_stream || sender_stream->get_rtcp()->install_receiver_hook(receiver_hook) != RTP_OK) {
-        std::cerr << "Failed to install RTCP receiver report hook" << std::endl;
-        cleanup(ctx, local_session, sender_stream);
-        return EXIT_FAILURE;
-    }
-
-    if (sender_stream) {
-        // Send dummy data so there's some RTP data to analyze
-        uint8_t buffer[PAYLOAD_LEN] = {0};
-        memset(buffer, 'a', PAYLOAD_LEN);
+        uint8_t buffer[frameSizeByte];
+        memset(buffer, 'a', frameSizeByte);
 
         memset(buffer, 0, 3);
         memset(buffer + 3, 1, 1);
         memset(buffer + 4, 1, (19 << 1)); // Intra frame
 
-        long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        //std::cout << "frame_size byte " << frameSizeByte << std::endl;
+
+        sender_stream->push_frame((uint8_t *) buffer, frameSizeByte, RTP_NO_FLAGS);
+
+        // send frames at constant interval to mimic a real camera stream
+        wait_until_next_frame(start, i);
+
+        nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        long endMs = startMs + testDurationS * 1e3;
-        long nowMs = 0;
-        int i = 0;
-        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-        while (nowMs < endMs) {
-            if ((i + 1) % 10 == 0 || i == 0) // print every 10 frames and first
-            {
-                std::cout << "Sending RTP frame " << (i + 1) << "/" << SEND_TEST_PACKETS
-                          << " Total data sent: " << (i + 1) * PAYLOAD_LEN << std::endl;
-            }
-
-            sender_stream->push_frame((uint8_t *) buffer, PAYLOAD_LEN, RTP_NO_FLAGS);
-
-            // send frames at constant interval to mimic a real camera stream
-            wait_until_next_frame(start, i);
-
-            nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-            i++;
-        }
-
-        std::cout << "Sending finished " << std::endl;
+        i++;
     }
+
+    std::cout << "Sending finished " << std::endl;
 
     cleanup(ctx, local_session, sender_stream);
     return EXIT_SUCCESS;
-}
-
-void receiver_hook(uvgrtp::frame::rtcp_receiver_report *frame) {
-    std::cout << "RTCP receiver report! ----------" << std::endl;
-
-    for (auto &block: frame->report_blocks) {
-        std::cout << "ssrc: " << block.ssrc << std::endl;
-        std::cout << "fraction: " << block.fraction << std::endl;
-        std::cout << "lost: " << block.lost << std::endl;
-        std::cout << "last_seq: " << block.last_seq << std::endl;
-        std::cout << "jitter: " << block.jitter << std::endl;
-        std::cout << "lsr: " << block.lsr << std::endl;
-        std::cout << "dlsr (jiffies): " << uvgrtp::clock::jiffies_to_ms(block.dlsr)
-                  << std::endl << std::endl;
-    }
-
-    /* RTCP frames can be deallocated using delete */
-    delete frame;
-}
-
-void sender_hook(uvgrtp::frame::rtcp_sender_report *frame) {
-    std::cout << "RTCP sender report! ----------" << std::endl;
-    std::cout << "NTP msw: " << frame->sender_info.ntp_msw << std::endl;
-    std::cout << "NTP lsw: " << frame->sender_info.ntp_lsw << std::endl;
-    std::cout << "RTP timestamp: " << frame->sender_info.rtp_ts << std::endl;
-    std::cout << "packet count: " << frame->sender_info.pkt_cnt << std::endl;
-    std::cout << "byte count: " << frame->sender_info.byte_cnt << std::endl;
-
-    for (auto &block: frame->report_blocks) {
-        std::cout << "ssrc: " << block.ssrc << std::endl;
-        std::cout << "fraction: " << block.fraction << std::endl;
-        std::cout << "lost: " << block.lost << std::endl;
-        std::cout << "last_seq: " << block.last_seq << std::endl;
-        std::cout << "jitter: " << block.jitter << std::endl;
-        std::cout << "lsr: " << block.lsr << std::endl;
-        std::cout << "dlsr (jiffies): " << uvgrtp::clock::jiffies_to_ms(block.dlsr)
-                  << std::endl << std::endl;
-    }
-
-    /* RTCP frames can be deallocated using delete */
-    delete frame;
 }
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index) {

@@ -22,13 +22,6 @@ constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE*EXAMPLE_RUN_TIME_S;
 constexpr int PACKET_INTERVAL_MS = 1000/FRAME_RATE;
 
-/* uvgRTP calls this hook when it receives an RTCP Report
- *
- * NOTE: If application uses hook, it must also free the frame when it's done with i
- * Frame must deallocated using uvgrtp::frame::dealloc_frame() function */
-void receiver_hook(uvgrtp::frame::rtcp_receiver_report *frame);
-void sender_hook(uvgrtp::frame::rtcp_sender_report *frame);
-
 void wait_until_next_frame(std::chrono::steady_clock::time_point& start, int frame_index);
 void cleanup(uvgrtp::context& ctx, uvgrtp::session *session, uvgrtp::media_stream *stream);
 
@@ -54,71 +47,10 @@ int main(int argc, char *argv[])
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender
 
-    /* In this example code, local_stream acts as the sender and because it is the only sender,
-     * it does not send any RTCP frames but only receives RTCP Receiver reports from remote_stream.
-     *
-     * Because local_stream only sends and remote_stream only receives, we only need to install
-     * receive hook for local_stream.
-     *
-     * By default, all media_stream that have RTCP enabled start as receivers and only if/when they 
-     * call push_frame() are they converted into senders. */
-
-    if (!remote_stream || remote_stream->get_rtcp()->install_sender_hook(sender_hook) != RTP_OK)
-    {
-        std::cerr << "Failed to install RTCP sender report hook" << std::endl;
-        cleanup(ctx, remote_session, remote_stream);
-        return EXIT_FAILURE;
-    }
-
     std::this_thread::sleep_for(std::chrono::seconds (600));
 
     cleanup(ctx,  remote_session,  remote_stream);
     return EXIT_SUCCESS;
-}
-
-void receiver_hook(uvgrtp::frame::rtcp_receiver_report *frame)
-{
-    std::cout << "RTCP receiver report! ----------"       << std::endl;
-
-    for (auto& block : frame->report_blocks)
-    {
-        std::cout << "ssrc: "       << block.ssrc     << std::endl;
-        std::cout << "fraction: "   << block.fraction << std::endl;
-        std::cout << "lost: "       << block.lost     << std::endl;
-        std::cout << "last_seq: "   << block.last_seq << std::endl;
-        std::cout << "jitter: "     << block.jitter   << std::endl;
-        std::cout << "lsr: "        << block.lsr      << std::endl;
-        std::cout << "dlsr (jiffies): "  << uvgrtp::clock::jiffies_to_ms(block.dlsr)
-                  << std::endl << std::endl;
-    }
-
-    /* RTCP frames can be deallocated using delete */
-    delete frame;
-}
-
-void sender_hook(uvgrtp::frame::rtcp_sender_report *frame)
-{
-    std::cout << "RTCP sender report! ----------"       << std::endl;
-    std::cout << "NTP msw: "        << frame->sender_info.ntp_msw   << std::endl;
-    std::cout << "NTP lsw: "        << frame->sender_info.ntp_lsw   << std::endl;
-    std::cout << "RTP timestamp: "  << frame->sender_info.rtp_ts    << std::endl;
-    std::cout << "packet count: "   << frame->sender_info.pkt_cnt   << std::endl;
-    std::cout << "byte count: "     << frame->sender_info.byte_cnt  << std::endl;
-
-    for (auto& block : frame->report_blocks)
-    {
-        std::cout << "ssrc: "       << block.ssrc     << std::endl;
-        std::cout << "fraction: "   << block.fraction << std::endl;
-        std::cout << "lost: "       << block.lost     << std::endl;
-        std::cout << "last_seq: "   << block.last_seq << std::endl;
-        std::cout << "jitter: "     << block.jitter   << std::endl;
-        std::cout << "lsr: "        << block.lsr      << std::endl;
-        std::cout << "dlsr (jiffies): "  << uvgrtp::clock::jiffies_to_ms(block.dlsr)
-                  << std::endl << std::endl;
-    }
-
-    /* RTCP frames can be deallocated using delete */
-    delete frame;
 }
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index)
