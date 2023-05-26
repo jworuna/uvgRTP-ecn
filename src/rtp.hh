@@ -6,6 +6,7 @@
 #include <chrono>
 #include <memory>
 #include <atomic>
+#include <mutex>
 
 namespace uvgrtp {
 
@@ -42,6 +43,9 @@ namespace uvgrtp {
             /* Validates the RTP header pointed to by "packet" */
             static rtp_error_t packet_handler(ssize_t size, void *packet, int rce_flags, frame::rtp_frame **out);
 
+            void set_desired_bitrate(uint64_t bitrate);
+            void get_desired_bitrate(uint64_t &bitrate);
+
         private:
 
             void set_default_clock_rate(rtp_format_t fmt);
@@ -70,6 +74,9 @@ namespace uvgrtp {
              *
              * Default value is 100ms */
             size_t delay_;
+
+            std::atomic_uint64_t desiredBitrate_ = 0;
+            //std::mutex bitrateMutex;
     };
 }
 

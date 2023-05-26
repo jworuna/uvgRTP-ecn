@@ -869,3 +869,8 @@ uint32_t uvgrtp::media_stream::get_default_bandwidth_kbps(rtp_format_t fmt)
 
     return bandwidth;
 }
+
+void uvgrtp::media_stream::set_desired_bitrate(uint64_t bitrate)
+{
+    rtp_->set_desired_bitrate(bitrate);
+}

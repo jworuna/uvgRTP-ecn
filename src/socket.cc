@@ -1027,8 +1027,8 @@ rtp_error_t uvgrtp::socket::__sendtov(sockaddr_in& addr, uvgrtp::pkt_vec& buffer
 {
     rtp_error_t return_value = RTP_OK;
 
-    int sent_bytes = 0;
     INT ret = 0;
+    int sent_bytes = 0;
     WSABUF wsa_bufs[WSABUF_SIZE];
 
     for (auto& buffer : buffers) {

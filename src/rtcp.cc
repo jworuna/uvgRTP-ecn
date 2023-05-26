@@ -1397,7 +1397,7 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
         return RTP_INVALID_VALUE;
     }
 
-    UVG_LOG_DEBUG("Received an RTCP packet with size: %li", size);
+    //UVG_LOG_DEBUG("Received an RTCP packet with size: %li", size);
 
     size_t read_ptr = 0;
     size_t remaining_size = size;
@@ -1442,8 +1442,10 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
          * We have to substract the size of header, since it was added when reading the header. */
         size_t packet_end = read_ptr - RTCP_HEADER_SIZE + size_of_rtcp_packet;
 
+        /*
         UVG_LOG_DEBUG("Handling packet # %i with size %li and remaining packet amount %li",
             packets, size_of_rtcp_packet, remaining_size);
+        */
 
         if (header.version != 0x2)
         {
@@ -1520,7 +1522,7 @@ rtp_error_t uvgrtp::rtcp::handle_incoming_packet(uint8_t *buffer, size_t size)
     }
     else
     {
-        UVG_LOG_WARN("Received RTCP packet was not a compound packet!");
+        //UVG_LOG_WARN("Received RTCP packet was not a compound packet!");
     }
 
     return RTP_OK;

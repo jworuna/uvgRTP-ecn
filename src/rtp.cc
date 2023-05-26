@@ -299,3 +299,13 @@ rtp_error_t uvgrtp::rtp::packet_handler(ssize_t size, void *packet, int rce_flag
 
     return RTP_PKT_MODIFIED;
 }
+
+void uvgrtp::rtp::set_desired_bitrate(uint64_t bitrate)
+{
+    desiredBitrate_.store(bitrate);
+}
+
+void uvgrtp::rtp::get_desired_bitrate(uint64_t &bitrate)
+{
+    bitrate = desiredBitrate_.load();
+}

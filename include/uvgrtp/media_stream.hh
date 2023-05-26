@@ -283,6 +283,8 @@ namespace uvgrtp {
              */
             uint32_t get_ssrc() const;
 
+            void set_desired_bitrate(uint64_t bitrate);
+
         private:
             /* Initialize the connection by initializing the socket
              * and binding ourselves to specified interface and creating

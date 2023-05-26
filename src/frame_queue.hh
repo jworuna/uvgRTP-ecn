@@ -191,6 +191,7 @@ namespace uvgrtp {
             uint64_t previousNanoToWait_ = 0;
             std::uniform_real_distribution<double> unif_;
             std::default_random_engine re;
+            std::chrono::high_resolution_clock::time_point start_time_;
     };
 }
 

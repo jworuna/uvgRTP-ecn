@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <random>
 
 /* RTP is a protocol for real-time streaming. The simplest usage
  * scenario is sending one RTP stream and receiving it. This example
@@ -15,7 +16,6 @@ constexpr char REMOTE_ADDRESS[] = "127.0.0.1";
 constexpr uint16_t REMOTE_PORT = 8890;
 
 // the parameters of demostration
-constexpr size_t PAYLOAD_LEN = 5000;
 constexpr int    AMOUNT_OF_TEST_PACKETS = 100;
 constexpr auto   END_WAIT = std::chrono::seconds(5);
 
@@ -43,7 +43,15 @@ int main(void)
      * In this example, we have one media stream with the remote participant: H265 */
 
     int flags = RCE_SEND_ONLY | RCE_ECN_PACKET_PACER;
+    //int flags = RCE_SEND_ONLY | RCE_PACE_FRAGMENT_SENDING | RCE_FRAME_RATE | RCE_ECN_TRAFFIC | RCE_RTCP;
     uvgrtp::media_stream *hevc = sess->create_stream(REMOTE_PORT, RTP_FORMAT_H265, flags);
+    hevc->set_desired_bitrate(25'000'000);
+
+    size_t DEFAULT_PAYLOAD_LEN = 25'000'000 / 8;
+    size_t PAYLOAD_LEN = DEFAULT_PAYLOAD_LEN;
+
+    std::uniform_real_distribution<double> unif(0.0, 1.0);
+    std::default_random_engine re(std::random_device{}());
 
     if (hevc)
     {
@@ -51,6 +59,12 @@ int main(void)
          * a file or a real-time encoded stream */
         for (int i = 0; i < AMOUNT_OF_TEST_PACKETS; ++i)
         {
+            if (i % 2 == 0)
+            {
+                PAYLOAD_LEN = (uint64_t)round((double)DEFAULT_PAYLOAD_LEN * unif(re));
+                hevc->set_desired_bitrate((PAYLOAD_LEN * 8));
+            }
+
             std::unique_ptr<uint8_t[]> dummy_frame = std::unique_ptr<uint8_t[]>(new uint8_t[PAYLOAD_LEN]);
             memset(dummy_frame.get(), 'a', PAYLOAD_LEN); // NAL payload
             memset(dummy_frame.get(),     0, 3);
@@ -58,7 +72,7 @@ int main(void)
             memset(dummy_frame.get() + 4, 1, (19 << 1)); // Intra frame NAL type
 
             if ((i+1)%10  == 0 || i == 0) // print every 10 frames and first
-                std::cout << "Sending frame " << i + 1 << '/' << AMOUNT_OF_TEST_PACKETS << std::endl;
+                std::cout << "Sending frame " << i + 1 << '/' << AMOUNT_OF_TEST_PACKETS << " PayloadLength: " << PAYLOAD_LEN << " Packets: " << PAYLOAD_LEN/1500 << std::endl;
 
             if (hevc->push_frame(std::move(dummy_frame), PAYLOAD_LEN, RTP_NO_FLAGS) != RTP_OK)
             {
