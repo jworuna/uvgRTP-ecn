@@ -390,6 +390,8 @@ namespace uvgrtp {
              */
             rtp_error_t install_ecn_hook(void *arg, std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler);
 
+            rtp_error_t install_bye_hook(void* arg, void (*hook)(void*));
+
             /// \cond DO_NOT_DOCUMENT
             // These have been replaced by functions with unique_ptr in them
             rtp_error_t install_sender_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)> sr_handler);
@@ -605,6 +607,9 @@ namespace uvgrtp {
             void (*ecn_hook_)(void*, uvgrtp::frame::rtcp_ecn_report *);
             void *ecn_hook_arg_;
 
+            void (*bye_hook_)(void*);
+            void *bye_hook_arg_;
+
             std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_f_;
             std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_u_;
             std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_receiver_report>)> rr_hook_f_;
@@ -621,6 +626,7 @@ namespace uvgrtp {
             std::mutex sdes_mutex_;
             std::mutex app_mutex_;
             std::mutex ecn_mutex_;
+            std::mutex bye_mutex_;
             mutable std::mutex participants_mutex_;
 
             std::unique_ptr<std::thread> report_generator_;

@@ -15,7 +15,7 @@
 
 
 // network parameters of the example
-constexpr char REMOTE_ADDRESS[] = "127.0.0.1";
+constexpr char REMOTE_ADDRESS[] = "192.168.2.153";
 constexpr uint16_t REMOTE_PORT = 8888;
 
 // demonstration parameters of the example
@@ -33,7 +33,7 @@ int main(void)
     // See sending example for more details
     uvgrtp::context ctx;
     uvgrtp::session *local_session = ctx.create_session(REMOTE_ADDRESS); // REMOTE_ADDRESS will be intereted as remote address due to RCE_SEND_ONLY
-    uvgrtp::session *remote_session = ctx.create_session(REMOTE_ADDRESS); // REMOTE_ADDRESS will be interpreted as local address due to RCE_RECEIVE_ONLY
+    //uvgrtp::session *remote_session = ctx.create_session(REMOTE_ADDRESS); // REMOTE_ADDRESS will be interpreted as local address due to RCE_RECEIVE_ONLY
 
     /* To enable interoperability between RTP libraries, uvgRTP won't fragment generic frames by default.
      *
@@ -52,6 +52,7 @@ int main(void)
 
     // set only one port, this one port is interpreted based on rce flags
     uvgrtp::media_stream *send = local_session->create_stream(REMOTE_PORT, RTP_FORMAT_GENERIC, send_flags);
+    /*
     uvgrtp::media_stream *recv = remote_session->create_stream(REMOTE_PORT, RTP_FORMAT_GENERIC, receive_flags);
 
     if (!recv || recv->install_receive_hook(nullptr, rtp_receive_hook) != RTP_OK)
@@ -60,6 +61,7 @@ int main(void)
         std::cerr << "Failed to install RTP receive hook!" << std::endl;
         return EXIT_FAILURE;
     }
+    */
 
     if (send)
     {
@@ -85,7 +87,7 @@ int main(void)
 
           if (send->push_frame(media.get(), random_packet_size, RTP_NO_FLAGS) != RTP_OK)
           {
-              cleanup(ctx, local_session, remote_session, send, recv);
+              cleanup(ctx, local_session, nullptr, send, nullptr);
               std::cerr << "Failed to send frame!" << std::endl;
               return EXIT_FAILURE;
           }
@@ -94,7 +96,7 @@ int main(void)
 
     /* Session must be destroyed manually */
     ctx.destroy_session(local_session);
-    ctx.destroy_session(remote_session);
+    //ctx.destroy_session(remote_session);
 
     return EXIT_SUCCESS;
 }

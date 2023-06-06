@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <set>
 
 
@@ -201,8 +202,8 @@ rtp_error_t uvgrtp::rtcp::start()
     }
     active_ = true;
 
-    report_receiver_.reset(new std::thread(rtcp_receiver, this));
-    report_generator_.reset(new std::thread(rtcp_runner, this, interval_ms_));
+    report_receiver_ = std::make_unique<std::thread>(rtcp_receiver, this);
+    report_generator_ = std::make_unique<std::thread>(rtcp_runner, this, interval_ms_);
 
     return RTP_OK;
 }
@@ -216,6 +217,25 @@ rtp_error_t uvgrtp::rtcp::stop()
     {
         cleanup_participants();
         return RTP_OK;
+    }
+
+    /* when the member count is less than 50,
+     * we can just send the BYE message and destroy the session */
+    if (members_ >= 50)
+    {
+        tp_       = tc_;
+        members_  = 1;
+        pmembers_ = 1;
+        initial_  = true;
+        we_sent_  = false;
+        senders_  = 0;
+    }
+
+    /* Send BYE packet with our SSRC to all participants */
+    auto result = uvgrtp::rtcp::send_bye_packet({ *ssrc_ });
+
+    while(!bye_ssrcs_.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     active_ = false;
@@ -232,24 +252,24 @@ rtp_error_t uvgrtp::rtcp::stop()
         report_generator_->join();
     }
 
-    /* when the member count is less than 50,
-     * we can just send the BYE message and destroy the session */
-    if (members_ >= 50)
-    {
-        tp_       = tc_;
-        members_  = 1;
-        pmembers_ = 1;
-        initial_  = true;
-        we_sent_  = false;
-        senders_  = 0;
-    }
-
-    /* Send BYE packet with our SSRC to all participants */
-    return uvgrtp::rtcp::send_bye_packet({ *ssrc_.get() });
+    return result;
 }
 
 void uvgrtp::rtcp::rtcp_runner(rtcp* rtcp, int interval)
 {
+    if (rtcp->rce_flags_ & RCE_RECEIVE_ONLY)
+    {
+        UVG_LOG_INFO("Waiting for at least one RTCP participant!");
+        while(rtcp->is_active())
+        {
+            auto participants = rtcp->get_participants();
+            if (participants.empty())
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            else
+                break;
+        }
+    }
+
     UVG_LOG_INFO("RTCP instance created! RTCP interval: %i ms", interval);
 
     // RFC 3550 says to wait half interval before sending first report
@@ -890,6 +910,19 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
     app_hook_f_ = nullptr;
     app_hook_u_ = app_handler;
     app_mutex_.unlock();
+
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::rtcp::install_bye_hook(void* arg, void(*hook)(void*))
+{
+    if (!bye_hook_)
+        return RTP_INVALID_VALUE;
+
+    bye_mutex_.lock();
+    bye_hook_ = hook;
+    bye_hook_arg_ = arg;
+    bye_mutex_.unlock();
 
     return RTP_OK;
 }
@@ -1782,6 +1815,11 @@ rtp_error_t uvgrtp::rtcp::handle_bye_packet(uint8_t* packet, size_t& read_ptr,
     }
 
     // TODO: Give BYE packet to user and read optional reason for BYE
+    bye_mutex_.lock();
+    if (bye_hook_) {
+        bye_hook_(bye_hook_arg_);
+    }
+    bye_mutex_.unlock();
 
     return RTP_OK;
 }
