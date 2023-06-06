@@ -390,6 +390,17 @@ namespace uvgrtp {
              */
             rtp_error_t install_ecn_hook(void *arg, std::function<void(void*, std::unique_ptr<uvgrtp::frame::rtcp_ecn_report>)> app_handler);
 
+            /**
+             * \brief Install an RTCP BYE packet hook
+             *
+             * \details This function is called when an RTCP a BYE packet is received
+             *
+             * \param arg Optional argument that is passed to the hook when it is called, can be set to nullptr
+             * \param hook Function pointer to the hook
+             *
+             * \retval RTP_OK on success
+             * \retval RTP_INVALID_VALUE If hook is nullptr
+             */
             rtp_error_t install_bye_hook(void* arg, void (*hook)(void*));
 
             /// \cond DO_NOT_DOCUMENT

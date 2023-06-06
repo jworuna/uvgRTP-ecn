@@ -22,6 +22,7 @@ constexpr uint16_t REMOTE_PORT = 8888;
 constexpr uint32_t PAYLOAD_MAXLEN = (0xffff - 0x1000);
 constexpr int TEST_PACKETS = 100;
 
+void rtcp_bye_hook(void *arg);
 void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame);
 void cleanup(uvgrtp::context& ctx, uvgrtp::session *local_session, uvgrtp::session *remote_session,
              uvgrtp::media_stream *send, uvgrtp::media_stream *receive);
@@ -63,6 +64,12 @@ int main(void)
     }
     */
 
+    if (!send || send->get_rtcp()->install_bye_hook(nullptr, rtcp_bye_hook))
+    {
+        std::cerr << "Failed to install BYE receive hook!" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     if (send)
     {
       /* Notice that PAYLOAD_MAXLEN > MTU (4096 > 1500).
@@ -99,6 +106,11 @@ int main(void)
     //ctx.destroy_session(remote_session);
 
     return EXIT_SUCCESS;
+}
+
+void rtcp_bye_hook(void *arg)
+{
+    printf("We got the bye message\n");
 }
 
 void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame)

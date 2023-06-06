@@ -916,7 +916,7 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
 
 rtp_error_t uvgrtp::rtcp::install_bye_hook(void* arg, void(*hook)(void*))
 {
-    if (!bye_hook_)
+    if (!hook)
         return RTP_INVALID_VALUE;
 
     bye_mutex_.lock();
