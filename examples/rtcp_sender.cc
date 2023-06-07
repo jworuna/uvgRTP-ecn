@@ -18,6 +18,7 @@
 constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
+constexpr int MAX_PAYLOAD_LEN = 1e6;
 constexpr int PAYLOAD_LEN_DEFAULT = 20000;
 constexpr uint16_t FRAME_RATE = 30;
 
@@ -70,6 +71,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     sender_stream->configure_ctx(RCC_ECN_LINK_USAGE, linkUsageDeltaKbits);
+    sender_stream->configure_ctx(RCC_UDP_SND_BUF_SIZE, 30000);
 
     long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -77,14 +79,14 @@ int main(int argc, char *argv[]) {
     long nowMs = 0;
     int i = 0;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+
+    uint8_t buffer[MAX_PAYLOAD_LEN] = { 0 };
+    memset(buffer, 'a', MAX_PAYLOAD_LEN);
+
+    memset(buffer,     0, 3);
+    memset(buffer + 3, 1, 1);
+    memset(buffer + 4, 1, (19 << 1)); // Intra frame
     while (nowMs < endMs) {
-        uint8_t buffer[payload_len_byte];
-        memset(buffer, 'a', payload_len_byte);
-
-        memset(buffer, 0, 3);
-        memset(buffer + 3, 1, 1);
-        memset(buffer + 4, 1, (19 << 1)); // Intra frame
-
         //std::cout << "frame_size byte " << frameSizeByte << std::endl;
 
         sender_stream->push_frame((uint8_t *) buffer, payload_len_byte, RTP_NO_FLAGS);
