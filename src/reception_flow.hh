@@ -30,7 +30,7 @@ namespace uvgrtp {
      * void * must be rtcp instance
      * uint32_t (ssrc), int(ECN-Bit)
      */
-    typedef rtp_error_t (*ecn_handler_aux)(void *, uvgrtp::frame::rtp_header* header , int);
+    typedef rtp_error_t (*ecn_handler_aux)(void *, uvgrtp::frame::rtp_frame *frame , int);
 
     struct ecn_handler
     {
@@ -180,7 +180,7 @@ namespace uvgrtp {
             void call_aux_handlers(uint32_t key, int rce_flags, uvgrtp::frame::rtp_frame **frame);
 
             /* Call ecn handlers of a primary handler */
-            void call_ecn_handlers(uint32_t key, uvgrtp::frame::rtp_header* header, int ecn_bit);
+            void call_ecn_handlers(uint32_t key, uvgrtp::frame::rtp_frame *frame, int ecn_bit);
 
             inline void increase_buffer_size(ssize_t next_write_index);
 

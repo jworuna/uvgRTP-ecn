@@ -424,7 +424,7 @@ namespace uvgrtp {
             static rtp_error_t send_packet_handler_vec(void *arg, uvgrtp::buf_vec& buffers);
 
             /* Update RTCP-ECN-related receiver statistics */
-            static rtp_error_t recv_ecn_handler(void *arg, uvgrtp::frame::rtp_header* header, int ecn_bit);
+            static rtp_error_t recv_ecn_handler(void *arg, uvgrtp::frame::rtp_frame *frame, int ecn_bit);
 
             // the length field is the rtcp packet size measured in 32-bit words - 1
             size_t rtcp_length_in_bytes(uint16_t length);
@@ -435,7 +435,9 @@ namespace uvgrtp {
             void set_ecn_aggregation_time_window(uint32_t time_window_in_ms);
             /// \endcond
 
-        private:
+        void set_ecn_link_usage(float link_usage_delta_kbits);
+
+    private:
 
             rtp_error_t set_sdes_items(const std::vector<uvgrtp::frame::rtcp_sdes_item>& items);
 
@@ -502,7 +504,7 @@ namespace uvgrtp {
              * packet-related statistics should not be updated */
             rtp_error_t update_participant_seq(uint32_t ssrc, uint16_t seq);
 
-            rtp_error_t update_ecn_receiver_statistics(uvgrtp::frame::rtp_header* header, int ecn_bit);
+            rtp_error_t update_ecn_receiver_statistics(uvgrtp::frame::rtp_frame *frame, int ecn_bit);
 
             /* Update the RTCP bandwidth variables
              *
@@ -653,6 +655,7 @@ namespace uvgrtp {
             size_t mtu_size_;
 
             uint32_t ecn_aggregation_time_window_ms_;
+
     };
 }
 

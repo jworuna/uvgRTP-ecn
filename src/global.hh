@@ -20,5 +20,13 @@ namespace uvgrtp {
     constexpr uint16_t MAX_IPV6_MEDIA_PAYLOAD = MAX_IPV6_PAYLOAD - RTP_HDR_SIZE;
 
     constexpr int PKT_MAX_DELAY_MS = 500;
+
+    constexpr int DEFAULT_PACKETS_IN_FRAGMENT = 14;
+
+    constexpr int MIN_BITRATE_KBITS = 1000;
+    constexpr uint16_t BLOCK_INTERVALL_CONGESTION_US = 1e6 / ((MIN_BITRATE_KBITS * 125) / MAX_IPV4_PAYLOAD);
+
+    constexpr uint16_t PROBING_BLOCK_START = 1;
+    constexpr uint16_t PROBING_BLOCK_END = 2;
 }
 

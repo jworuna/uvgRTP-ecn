@@ -411,6 +411,14 @@ enum RTP_CTX_CONFIGURATION_FLAGS {
     */
     RCC_ECN_AGGREGATION_TIME_WINDOW    = 11,
 
+    /**
+     * @brief Change ECN aggregation time window (default 10 ms)
+     * @n - Counts all packets arriving packets
+     * @n - Counts all packets with ECN-CE
+     * @details Time window in milliseconds to count ECN-CE marked packets (default 10 ms)
+    */
+    RCC_ECN_LINK_USAGE = 12,
+
     /// \cond DO_NOT_DOCUMENT
     RCC_LAST
     /// \endcond

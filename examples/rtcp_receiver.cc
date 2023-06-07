@@ -25,6 +25,18 @@ constexpr int PACKET_INTERVAL_MS = 1000/FRAME_RATE;
 void wait_until_next_frame(std::chrono::steady_clock::time_point& start, int frame_index);
 void cleanup(uvgrtp::context& ctx, uvgrtp::session *session, uvgrtp::media_stream *stream);
 
+void rtp_receive_hook(void *arg, uvgrtp::frame::rtp_frame *frame) {
+    std::cout << "Received RTP frame" << std::endl;
+
+    /* Now we own the frame. Here you could give the frame to the application
+     * if f.ex "arg" was some application-specific pointer
+     *
+     * arg->copy_frame(frame) or whatever
+     *
+     * When we're done with the frame, it must be deallocated manually */
+    (void) uvgrtp::frame::dealloc_frame(frame);
+}
+
 int main(int argc, char *argv[])
 {
     if (argc != 2) {
@@ -38,16 +50,22 @@ int main(int argc, char *argv[])
     uvgrtp::context ctx;
     uvgrtp::session *remote_session = ctx.create_session(senderIp);
 
-    int flags = RCE_RTCP | RCE_RTCP | RCE_ECN_TRAFFIC;;
+    int flags = RCE_RTCP | RCE_RTCP | RCE_ECN_TRAFFIC | RCE_FRAGMENT_GENERIC;
     uvgrtp::media_stream *remote_stream = remote_session->create_stream(REMOTE_PORT, LOCAL_PORT,
                                                                         RTP_FORMAT_GENERIC, flags);
 
     remote_stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 100);
 
+    if (remote_stream->install_receive_hook(nullptr, rtp_receive_hook) != RTP_OK) {
+        std::cerr << "Failed to install RTP reception hook";
+        cleanup(ctx, remote_session, remote_stream);
+        return EXIT_FAILURE;
+    }
+
     // TODO: There is a bug in uvgRTP in how sender reports are implemented and this text reflects
     // that wrong thinking. Sender reports are sent by the sender
 
-    std::this_thread::sleep_for(std::chrono::seconds (600));
+    std::this_thread::sleep_for(std::chrono::seconds (1200));
 
     cleanup(ctx,  remote_session,  remote_stream);
     return EXIT_SUCCESS;

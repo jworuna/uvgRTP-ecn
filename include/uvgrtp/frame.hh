@@ -51,6 +51,20 @@ namespace uvgrtp {
             uint8_t *data = nullptr;
         });
 
+        PACK(struct rtp_ext_header {
+                 uint8_t version:2;
+                 uint8_t padding:1;
+                 uint8_t ext:1;
+                 uint8_t cc:4;
+                 uint8_t marker:1;
+                 uint8_t payload:7;
+                 uint16_t seq = 0;
+                 uint32_t timestamp = 0;
+                 uint32_t ssrc = 0;
+                 uint16_t type = 0;
+                 uint16_t len = 0;
+             });
+
         /** \brief See <a href="https://www.rfc-editor.org/rfc/rfc3550#section-5" target="_blank">RFC 3550 section 5</a> */
         struct rtp_frame {
             struct rtp_header header;

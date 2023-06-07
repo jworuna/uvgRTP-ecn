@@ -6,11 +6,12 @@
 
 #include "rtp.hh"
 #include "srtp/base.hh"
-
+#include <netinet/in.h>
+#include "global.hh"
 #include "random.hh"
 #include "debug.hh"
 #include <thread>
-
+#include <unistd.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -20,6 +21,7 @@
 #include <cstring>
 #endif
 
+extern int loadkbits;
 
 uvgrtp::frame_queue::frame_queue(std::shared_ptr<uvgrtp::socket> socket, std::shared_ptr<uvgrtp::rtp> rtp, int rce_flags):
     active_(nullptr),
@@ -59,7 +61,7 @@ rtp_error_t uvgrtp::frame_queue::init_transaction()
     active_->headers     = nullptr;
     active_->chunks      = nullptr;
 #endif
-    active_->rtp_headers = new uvgrtp::frame::rtp_header[max_mcount_];
+    active_->rtp_headers = new uvgrtp::frame::rtp_ext_header[max_mcount_];
 
     switch (rtp_->get_payload()) {
         case RTP_FORMAT_H264:
@@ -268,118 +270,64 @@ rtp_error_t uvgrtp::frame_queue::enqueue_message(buf_vec& buffers)
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::frame_queue::flush_queue()
-{
+rtp_error_t uvgrtp::frame_queue::flush_queue() {
     if (active_->packets.empty()) {
         UVG_LOG_ERROR("Cannot send an empty packet!");
-        (void)deinit_transaction();
+        (void) deinit_transaction();
         return RTP_INVALID_VALUE;
     }
 
-    /* set the marker bit of the last packet to 1 */
-    if (active_->packets.size() > 1)
-        ((uint8_t *)&active_->rtp_headers[active_->rtphdr_ptr - 1])[1] |= (1 << 7);
-    
-    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    int packetIndexStart = 0;
+    int packetIndexEnd = 0;
 
-    if ((rce_flags_ & RCE_FRAME_RATE) && fps_)
-    {
-        std::chrono::nanoseconds wait_time = this_frame_time() - now;
+    int packetsTotal = (int) active_->packets.size();
+    int packetsLeft = packetsTotal;
 
-        if (wait_time.count() < 0 || force_sync_)
-        {
-            if (wait_time.count() < 0)
-            {
-                /*
-                UVG_LOG_DEBUG("Updating fps synchronization point because we are late by %lli ms", 
-                    -std::chrono::duration_cast<std::chrono::milliseconds> (wait_time).count());
-                    */
+    while (packetsLeft > 0) {
+        long startUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+        if (packetsLeft > DEFAULT_PACKETS_IN_FRAGMENT) {
+            packetIndexEnd = packetIndexStart + DEFAULT_PACKETS_IN_FRAGMENT;
+            packetsLeft -= DEFAULT_PACKETS_IN_FRAGMENT;
+            if (packetsLeft > 0 and packetsLeft < (DEFAULT_PACKETS_IN_FRAGMENT / 2)) {
+                packetIndexEnd += packetsLeft;
+                packetsLeft = 0;
             }
-            else if ( wait_time < frame_interval_ * 0.5)
-            {
-                UVG_LOG_DEBUG("Frames are arriving with sensible delay, ending forced synchronization point update");
-                force_sync_ = false;
-            }
-            else
-            {
-                UVG_LOG_DEBUG("Forcing fps synchronization point update");
-            }
-            update_sync_point();
+        } else {
+            packetIndexEnd = packetIndexStart + packetsLeft;
+            packetsLeft = 0;
         }
-        else
-        {
-            // we cap the sleep/latency at frame interval
-            if (wait_time > frame_interval_)
-            {
-                UVG_LOG_DEBUG("Limiting fps wait times to frame interval");
-                std::this_thread::sleep_for(frame_interval_);
+        ((uint16_t *) active_->packets[packetIndexStart][0].second)[6] = htons(PROBING_BLOCK_START);
+        ((uint16_t *) active_->packets[packetIndexEnd - 1][0].second)[6] = htons(PROBING_BLOCK_END);
 
-                update_sync_point();
-            }
-            else
-            {
-                // if nothing is wrong, wait until it is time to send this frame
-                std::this_thread::sleep_for(wait_time);
-            }
-            now = std::chrono::high_resolution_clock::now(); // update now in case we are using fragment pacing
-        }
-
-        ++frames_since_sync_;
-    }
-
-    if ((rce_flags_ & RCE_PACE_FRAGMENT_SENDING) && fps_ && !force_sync_)
-    {
-        // allocate 80% of frame interval for pacing, rest for other processing
-        std::chrono::nanoseconds packet_interval = 8*frame_interval_/(10*active_->packets.size());
-
-        for (size_t i = 0; i < active_->packets.size(); ++i)
-        {
-            std::chrono::high_resolution_clock::time_point next_packet = now + i * packet_interval;
-
-            // sleep until next packet time
-            std::this_thread::sleep_for(next_packet - std::chrono::high_resolution_clock::now());
-
-            rtp_error_t result;
-            if (!(rce_flags_ & RCE_ECN_TRAFFIC))
-                result = socket_->sendto(active_->packets[i], 0);
-            else
-            {
-#ifdef _WIN32
-                result = socket_->sendto(active_->packets[i], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
-#else
-                result = socket_->sendto(active_->packets[i], 0);
-#endif
-            }
-
+        // send packet fragment of constant size and wait for load controll
+        UVG_LOG_DEBUG("send packetIndexStart %i packetIndexEnd %i", packetIndexStart, packetIndexEnd);
+        for (int i = packetIndexStart; i < packetIndexEnd; ++i) {
+            rtp_error_t result = socket_->sendto(active_->packets[i], 0);
             if (result != RTP_OK) {
                 UVG_LOG_ERROR("Failed to send packet: %li", errno);
-                (void)deinit_transaction();
+                (void) deinit_transaction();
                 return RTP_SEND_ERROR;
             }
         }
-    }
-    else
-    {
-        rtp_error_t result;
-        if (!(rce_flags_ & RCE_ECN_TRAFFIC))
-            result = socket_->sendto(active_->packets, 0);
-        else
-        {
-#ifdef _WIN32
-            result = socket_->sendto(active_->packets, 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
-#else
-            result = socket_->sendto(active_->packets, 0);
-#endif
-        }
+        // wait for this block according to capacity
+        int bytesInBlock = (packetIndexEnd - packetIndexStart) * MAX_IPV4_PAYLOAD;
+        long blockTimeUs = (1e6 * bytesInBlock) / (loadkbits * 1000 / 8);
+        packetIndexStart = packetIndexEnd;
+        packetsLeft = (packetsTotal - packetIndexStart);
 
-        if (result != RTP_OK) {
-            UVG_LOG_ERROR("Failed to flush the message queue: %li", errno);
-            (void)deinit_transaction();
-            return RTP_SEND_ERROR;
+        long nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        long diffUs = nowUs - startUs;
+        long waitUs = blockTimeUs - diffUs;
+        //UVG_LOG_DEBUG("blockTimeUs %li us waitUs %li us", blockTimeUs, waitUs);
+        if (waitUs > 0) {
+            //UVG_LOG_DEBUG("sleep_for %li us", waitUs);
+            usleep(waitUs);
         }
+        //UVG_LOG_DEBUG("full message took %zu chunks and %zu messages", active_->chunk_ptr, active_->hdr_ptr);
     }
-
-    //UVG_LOG_DEBUG("full message took %zu chunks and %zu messages", active_->chunk_ptr, active_->hdr_ptr);
     return deinit_transaction();
 }
 

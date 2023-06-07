@@ -35,8 +35,8 @@ namespace uvgrtp {
         /* All packets of a transaction share the common RTP header only differing in sequence number.
          * Keeping a separate common RTP header and then just copying this is cleaner than initializing
          * RTP header for each packet */
-        uvgrtp::frame::rtp_header rtp_common;
-        uvgrtp::frame::rtp_header *rtp_headers = nullptr;
+        uvgrtp::frame::rtp_ext_header rtp_common;
+        uvgrtp::frame::rtp_ext_header *rtp_headers = nullptr;
 
 #ifndef _WIN32
         struct mmsghdr *headers = nullptr;
@@ -156,7 +156,9 @@ namespace uvgrtp {
                 force_sync_ = true;
             }
 
-        private:
+
+
+    private:
 
             void enqueue_finalize(uvgrtp::buf_vec& tmp);
 

@@ -18,37 +18,26 @@
 constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
-constexpr uint16_t PAYLOAD_LEN = 200000;
-constexpr uint16_t MIN_PAYLOAD_LEN_BYTE = 1400 * 3;
-constexpr uint16_t MIN_BITRATE_KBITS = 500;
-
+constexpr int PAYLOAD_LEN_DEFAULT = 20000;
 constexpr uint16_t FRAME_RATE = 30;
+
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
 constexpr int PACKET_INTERVAL_MS = 1000 / FRAME_RATE;
-bool linkCongested = false;
-int capacityKbits = MIN_BITRATE_KBITS * 4;
-float linkUsageScale = 0.6;
+int linkUsageDeltaKbits = 1000;
+int payload_len_byte = PAYLOAD_LEN_DEFAULT;
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index);
 
 void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media_stream *send);
 
 void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
-    printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i\n", frame->ssrc,
-           frame->packet_count_tw,
-           frame->ect_ce_count_tw, frame->capacity_kbits, frame->early_feedback_mode);
+    payload_len_byte = (frame->capacity_kbits * 125 / FRAME_RATE);
 
-    if (frame->capacity_kbits > 0)
-        capacityKbits = frame->capacity_kbits;
-    if (!linkCongested && frame->early_feedback_mode) {
-        linkCongested = true;
-        capacityKbits = MIN_BITRATE_KBITS;
-        std::cout << "congestion experienced, use min bitrate" << MIN_BITRATE_KBITS << " bkits" << std::endl;
-    } else if (linkCongested && !frame->early_feedback_mode) {
-        linkCongested = false;
-        std::cout << "congestion over, bitrate " << capacityKbits << " kbits " << std::endl;
-    }
+    printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i payload_len_byte: %i\n",
+           frame->ssrc,
+           frame->packet_count_tw,
+           frame->ect_ce_count_tw, frame->capacity_kbits, frame->early_feedback_mode, payload_len_byte);
 
     delete frame;
 }
@@ -60,11 +49,11 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     std::string receiverIp = argv[1];
-    linkUsageScale = atof(argv[2]);
+    linkUsageDeltaKbits = atoi(argv[2]);
     int testDurationS = strtol(argv[3], NULL, 10);
 
     std::cout << "Starting RTCP ECN sending example receiverIp " << receiverIp << " test duration s " << testDurationS
-              << " link usage scale " << linkUsageScale
+              << " link usage scale " << linkUsageDeltaKbits
               << std::endl;
 
     // Creation of RTP stream. See sending example for more details
@@ -80,6 +69,7 @@ int main(int argc, char *argv[]) {
         cleanup(ctx, local_session, sender_stream);
         return EXIT_FAILURE;
     }
+    sender_stream->configure_ctx(RCC_ECN_LINK_USAGE, linkUsageDeltaKbits);
 
     long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -88,11 +78,8 @@ int main(int argc, char *argv[]) {
     int i = 0;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     while (nowMs < endMs) {
-        int frameSizeByte = (capacityKbits * 1000 * linkUsageScale) / (FRAME_RATE * 8);
-        std::cout << "Sending RTP frame size " << frameSizeByte << " byte" << std::endl;
-
-        uint8_t buffer[frameSizeByte];
-        memset(buffer, 'a', frameSizeByte);
+        uint8_t buffer[payload_len_byte];
+        memset(buffer, 'a', payload_len_byte);
 
         memset(buffer, 0, 3);
         memset(buffer + 3, 1, 1);
@@ -100,7 +87,7 @@ int main(int argc, char *argv[]) {
 
         //std::cout << "frame_size byte " << frameSizeByte << std::endl;
 
-        sender_stream->push_frame((uint8_t *) buffer, frameSizeByte, RTP_NO_FLAGS);
+        sender_stream->push_frame((uint8_t *) buffer, payload_len_byte, RTP_NO_FLAGS);
 
         // send frames at constant interval to mimic a real camera stream
         wait_until_next_frame(start, i);

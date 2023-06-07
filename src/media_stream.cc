@@ -21,7 +21,7 @@
 #include <cstring>
 #include <errno.h>
 
-uvgrtp::media_stream::media_stream(std::string cname, std::string remote_addr, 
+uvgrtp::media_stream::media_stream(std::string cname, std::string remote_addr,
     std::string local_addr, uint16_t src_port, uint16_t dst_port, rtp_format_t fmt, 
     int rce_flags):
     key_(uvgrtp::random::generate_32()),
@@ -717,6 +717,16 @@ rtp_error_t uvgrtp::media_stream::configure_ctx(int rcc_flag, ssize_t value)
             }
 
             rtcp_->set_ecn_aggregation_time_window((uint32_t) value);
+            break;
+        }
+        case RCC_ECN_LINK_USAGE:
+        {
+            if (value < 500 or value > 10000) {
+                UVG_LOG_ERROR("RCC_ECN_LINK_USAGE must be in interval (500,5000) kbits.");
+                return RTP_INVALID_VALUE;
+            }
+
+            rtcp_->set_ecn_link_usage( value);
             break;
         }
         default:

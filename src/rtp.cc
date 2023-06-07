@@ -141,7 +141,7 @@ void uvgrtp::rtp::fill_header(uint8_t *buffer)
         wc_start_ = std::chrono::high_resolution_clock::now();
     }
 
-    buffer[0] = 2 << 6; // RTP version
+    buffer[0] = 128 + 16; // RTP version + Extension
     buffer[1] = (payload_ & 0x7f) | (0 << 7);
 
     *(uint16_t *)&buffer[2] = htons(seq_);
@@ -162,6 +162,9 @@ void uvgrtp::rtp::fill_header(uint8_t *buffer)
     } else {
         *(uint32_t *)&buffer[4] = htonl((u_long)timestamp_);
     }
+    // extension
+    *(uint16_t *)&buffer[12] = htons(0);
+    *(uint16_t *)&buffer[14] = htons(0);
 }
 
 void uvgrtp::rtp::set_timestamp(uint64_t timestamp)
@@ -267,7 +270,7 @@ rtp_error_t uvgrtp::rtp::packet_handler(ssize_t size, void *packet, int rce_flag
     }
 
     if ((*out)->header.ext) {
-        UVG_LOG_DEBUG("Frame contains extension information");
+        //UVG_LOG_DEBUG("Frame contains extension information");
         (*out)->ext = new uvgrtp::frame::ext_header;
 
         (*out)->ext->type    = ntohs(*(uint16_t *)&ptr[0]);
