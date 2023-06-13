@@ -43,6 +43,7 @@ const uint32_t MAX_SUPPORTED_PARTICIPANTS = 31;
 
 int ecn_link_usage_percent = 60;
 int loadkbits = uvgrtp::MIN_BITRATE_KBITS * 2;
+int packetsInBlock = uvgrtp::DEFAULT_PACKETS_IN_FRAGMENT;
 
 uvgrtp::rtcp::rtcp(std::shared_ptr<uvgrtp::rtp> rtp, std::shared_ptr<std::atomic_uint> ssrc, std::string cname,
                    int rce_flags) :
@@ -2090,9 +2091,13 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, s
     loadkbits = (frame->capacity_kbits * ecn_link_usage_percent) / 100;
     if (loadkbits < MIN_BITRATE_KBITS)
         loadkbits = MIN_BITRATE_KBITS;
+    if (loadkbits > MAX_BITRATE_KBITS)
+        loadkbits = MAX_BITRATE_KBITS;
 
     frame->capacity_kbits = loadkbits;
-    UVG_LOG_DEBUG("L4S feedback received capacity_kbits %i early_feedback_mode %i loadkbits %i", frame->capacity_kbits,frame->early_feedback_mode, loadkbits);
+
+    packetsInBlock = 0.00015 * loadkbits + 4.9;
+    //UVG_LOG_DEBUG("L4S feedback received capacity_kbits %i early_feedback_mode %i loadkbits %i packetsInBlock %i", frame->capacity_kbits,frame->early_feedback_mode, loadkbits, packetsInBlock);
     participants_mutex_.unlock();
 
     read_ptr += ECN_REPORT_BLOCK_SIZE;

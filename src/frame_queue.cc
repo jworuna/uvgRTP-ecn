@@ -16,12 +16,11 @@
 #include <winsock2.h>
 #include <windows.h>
 #else
-#include <arpa/inet.h>
-#include <cassert>
 #include <cstring>
 #endif
 
 extern int loadkbits;
+extern int packetsInBlock;
 
 uvgrtp::frame_queue::frame_queue(std::shared_ptr<uvgrtp::socket> socket, std::shared_ptr<uvgrtp::rtp> rtp, int rce_flags):
     active_(nullptr),
@@ -287,10 +286,10 @@ rtp_error_t uvgrtp::frame_queue::flush_queue() {
         long startUs = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-        if (packetsLeft > DEFAULT_PACKETS_IN_FRAGMENT) {
-            packetIndexEnd = packetIndexStart + DEFAULT_PACKETS_IN_FRAGMENT;
-            packetsLeft -= DEFAULT_PACKETS_IN_FRAGMENT;
-            if (packetsLeft > 0 and packetsLeft < (DEFAULT_PACKETS_IN_FRAGMENT / 2)) {
+        if (packetsLeft > packetsInBlock) {
+            packetIndexEnd = packetIndexStart + packetsInBlock;
+            packetsLeft -= packetsInBlock;
+            if (packetsLeft > 0 and packetsLeft < (packetsInBlock / 2)) {
                 packetIndexEnd += packetsLeft;
                 packetsLeft = 0;
             }

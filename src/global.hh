@@ -22,8 +22,12 @@ namespace uvgrtp {
     constexpr int PKT_MAX_DELAY_MS = 500;
 
     constexpr int DEFAULT_PACKETS_IN_FRAGMENT = 14;
+    constexpr int MIN_PACKETS_IN_FRAGMENT = 5;
+    constexpr int MAX_PACKETS_IN_FRAGMENT = 100;
 
-    constexpr int MIN_BITRATE_KBITS = 1000;
+    constexpr int MIN_BITRATE_KBITS = 500;
+    constexpr int MAX_BITRATE_KBITS = 500000;
+
     constexpr uint16_t BLOCK_INTERVALL_CONGESTION_US = 1e6 / ((MIN_BITRATE_KBITS * 125) / MAX_IPV4_PAYLOAD);
 
     constexpr uint16_t PROBING_BLOCK_START = 1;
