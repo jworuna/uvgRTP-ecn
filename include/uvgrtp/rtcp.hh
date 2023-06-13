@@ -28,12 +28,12 @@ namespace uvgrtp {
         SENDER
     };
 
+    constexpr int ECN_IN_BLOCK_INIT = -1;
     struct ecn_statistics {
-        uint32_t ext_highest_seq_num = 0;
         uint32_t packet_count_tw = 0;
         uint32_t ect_ce_count_tw = 0;
         long startTimeFrameUs = 0;
-        uint32_t lastTs = 0;
+        int first_ecn_in_block = ECN_IN_BLOCK_INIT;
         uint32_t bytesInFrame = 0;
         uint32_t capacityKbits = 0;
         uint32_t early_feedback_mode = 0;
@@ -435,7 +435,7 @@ namespace uvgrtp {
             void set_ecn_aggregation_time_window(uint32_t time_window_in_ms);
             /// \endcond
 
-        void set_ecn_link_usage(float link_usage_delta_kbits);
+        void set_ecn_link_usage(int link_usage_percent);
 
     private:
 

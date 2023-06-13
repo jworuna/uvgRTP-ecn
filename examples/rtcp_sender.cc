@@ -25,7 +25,7 @@ constexpr uint16_t FRAME_RATE = 30;
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
 constexpr int PACKET_INTERVAL_MS = 1000 / FRAME_RATE;
-int linkUsageDeltaKbits = 1000;
+int linkUsagePercent = 60;
 int payload_len_byte = PAYLOAD_LEN_DEFAULT;
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index);
@@ -46,15 +46,15 @@ void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
 int main(int argc, char *argv[]) {
     std::cout << "Starting uvgRTP RTCP hook example" << std::endl;
     if (argc != 4) {
-        std::cerr << "Usage: <receiverIp> <link usage [0..1]> <test duration s>" << std::endl;
+        std::cerr << "Usage: <receiverIp> <link usage [30 90]> <test duration s>" << std::endl;
         return EXIT_FAILURE;
     }
     std::string receiverIp = argv[1];
-    linkUsageDeltaKbits = atoi(argv[2]);
+    linkUsagePercent = atoi(argv[2]);
     int testDurationS = strtol(argv[3], NULL, 10);
 
     std::cout << "Starting RTCP ECN sending example receiverIp " << receiverIp << " test duration s " << testDurationS
-              << " link usage scale " << linkUsageDeltaKbits
+              << " link usage scale " << linkUsagePercent
               << std::endl;
 
     // Creation of RTP stream. See sending example for more details
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
         cleanup(ctx, local_session, sender_stream);
         return EXIT_FAILURE;
     }
-    sender_stream->configure_ctx(RCC_ECN_LINK_USAGE, linkUsageDeltaKbits);
+    sender_stream->configure_ctx(RCC_ECN_LINK_USAGE, linkUsagePercent);
     sender_stream->configure_ctx(RCC_UDP_SND_BUF_SIZE, 30000);
 
     long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(

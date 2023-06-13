@@ -721,8 +721,8 @@ rtp_error_t uvgrtp::media_stream::configure_ctx(int rcc_flag, ssize_t value)
         }
         case RCC_ECN_LINK_USAGE:
         {
-            if (value < 500 or value > 10000) {
-                UVG_LOG_ERROR("RCC_ECN_LINK_USAGE must be in interval (500,5000) kbits.");
+            if (value < 30 or value > 90) {
+                UVG_LOG_ERROR("RCC_ECN_LINK_USAGE must be in interval (30,90) kbits.");
                 return RTP_INVALID_VALUE;
             }
 
