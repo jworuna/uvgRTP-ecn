@@ -4,8 +4,10 @@ _All changes are made in the branch "ecn"_
 
 The purpose of this fork is to enable uvgRTP to send and receive ECN-Bits to/from the IP-Header.
 Furthermore, the possibility to accumulate the ECN-Bits for each packet in a certain time window and
-a RTCP report to send the accumulated information back to the sender. The sender can then, create an
-ECN based bitrate adaption for the encoder.
+a RTCP report to send the accumulated information back to the sender. 
+A load control (probing ctrl) is integrated into the sender. If the application pushes more frames than
+currently possible due to the link capacity, the push_frame() call will block until the link can transmit 
+another frame.
 
 ## ECN-Bits
 
@@ -29,9 +31,9 @@ By default, the receiver of the RTP traffic will generate every 10ms an ECN RTCP
 
 ### ECN RTP Context Configuration (RCC) flags
 
-`RCC_ECN_AGGREGATION_TIME_WINDOW` is used to configure the ECN report interval time window in milliseconds. (default 10ms)
+`RCC_ECN_LINK_USAGE` is used to configure the link usage of the integrated probing load ctrl in percent (default 60).
 
-```stream->configure_ctx(RCC_ECN_AGGREGATION_TIME_WINDOW, 100);```
+```stream->configure_ctx(RCC_ECN_LINK_USAGE, 80);```
 
 ### ECN RTCP receiver hook
 
@@ -45,10 +47,11 @@ stream->get_rtcp()->install_ecn_hook(nullptr, ecn_receiver_hook)
 
 void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame)
 {
-    printf("ECN Report from: %u, packets: %i, ecn-ce: %i\n", 
+    printf("ECN Report from: %u, packets: %i, ecn-ce: %i, capacity: %i kbits\n", 
             frame->ssrc, 
             frame->packet_count_tw, 
-            frame->ect_ce_count_tw);
+            frame->ect_ce_count_tw,
+            frame->capacity_kbits);
 
     delete frame;
 }
@@ -56,10 +59,8 @@ void ecn_receiver_hook(void* arg, uvgrtp::frame::rtcp_ecn_report *frame)
 
 ### Usage of the ECN RTCP values
 
-This report can be used to develop an ECN based bitrate adaption algorithm to optimize the encoder bitrate
-and minimize the jitter. 
-
-A sample will be provided soon...
+This report should be used to push frames according to the capacity received in the feedback. 
+The application could e.e set the encoder bitrate of the rtp video stream.
 
 ## How to test ECN based functionality?
 
