@@ -4,6 +4,8 @@
 #include "formats/h265.hh"
 #include "formats/h266.hh"
 
+#include <condition_variable>
+
 #include "rtp.hh"
 #include "srtp/base.hh"
 #include <netinet/in.h>
@@ -21,6 +23,12 @@
 
 extern int loadkbits;
 extern int packetsInBlock;
+extern long lastFeedbackReceivedUs;
+extern bool linkCapacityLow;
+
+extern std::condition_variable cv;
+extern std::mutex cv_m;
+long feedbackTimeoutUs;
 
 uvgrtp::frame_queue::frame_queue(std::shared_ptr<uvgrtp::socket> socket, std::shared_ptr<uvgrtp::rtp> rtp, int rce_flags):
     active_(nullptr),
@@ -285,6 +293,15 @@ rtp_error_t uvgrtp::frame_queue::flush_queue() {
     while (packetsLeft > 0) {
         long startUs = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
+
+        // check for bad link
+        feedbackTimeoutUs = startUs - FEEDBACK_TIMEOUT_US;
+        if ((lastFeedbackReceivedUs > 0 and lastFeedbackReceivedUs <= feedbackTimeoutUs) or linkCapacityLow)
+        {
+            std::unique_lock<std::mutex> lk(cv_m);
+            UVG_LOG_DEBUG("Waiting for ecn feedback after %li us or linkCapacityLow %i", lastFeedbackReceivedUs, linkCapacityLow);
+            cv.wait_for(lk,std::chrono::milliseconds(200), []{return (lastFeedbackReceivedUs > feedbackTimeoutUs) and !linkCapacityLow;});
+        }
 
         if (packetsLeft > packetsInBlock) {
             packetIndexEnd = packetIndexStart + packetsInBlock;

@@ -19,14 +19,14 @@ constexpr uint16_t LOCAL_PORT = 8888;
 constexpr uint16_t REMOTE_PORT = 8890;
 
 constexpr int MAX_PAYLOAD_LEN = 1e6;
-constexpr int PAYLOAD_LEN_DEFAULT = 20000;
+constexpr int PAYLOAD_LEN_MIN = 5 * 1500;
 constexpr uint16_t FRAME_RATE = 30;
 
 constexpr uint32_t EXAMPLE_RUN_TIME_S = 30;
 constexpr int SEND_TEST_PACKETS = FRAME_RATE * EXAMPLE_RUN_TIME_S;
 constexpr int PACKET_INTERVAL_MS = 1000 / FRAME_RATE;
 int linkUsagePercent = 60;
-int payload_len_byte = PAYLOAD_LEN_DEFAULT;
+int payload_len_byte = PAYLOAD_LEN_MIN;
 
 void wait_until_next_frame(std::chrono::steady_clock::time_point &start, int frame_index);
 
@@ -34,6 +34,8 @@ void cleanup(uvgrtp::context &ctx, uvgrtp::session *local_session, uvgrtp::media
 
 void ecn_receiver_hook(void *arg, uvgrtp::frame::rtcp_ecn_report *frame) {
     payload_len_byte = (frame->capacity_kbits * 125 / FRAME_RATE);
+    if (payload_len_byte < PAYLOAD_LEN_MIN)
+        payload_len_byte = PAYLOAD_LEN_MIN;
 
     printf("ECN Report from: %u packets: %i ecn-ce: %i capacity: %i kbits early_feedback_mode: %i payload_len_byte: %i\n",
            frame->ssrc,
@@ -71,7 +73,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     sender_stream->configure_ctx(RCC_ECN_LINK_USAGE, linkUsagePercent);
-    sender_stream->configure_ctx(RCC_UDP_SND_BUF_SIZE, 30000);
+    sender_stream->configure_ctx(RCC_UDP_SND_BUF_SIZE, 8192);
 
     long startMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();

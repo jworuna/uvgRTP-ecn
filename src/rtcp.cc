@@ -27,6 +27,7 @@
 #include <cstring>
 #include <iostream>
 #include <set>
+#include <condition_variable>
 
 
 /* TODO: explain these constants */
@@ -44,6 +45,10 @@ const uint32_t MAX_SUPPORTED_PARTICIPANTS = 31;
 int ecn_link_usage_percent = 60;
 int loadkbits = uvgrtp::MIN_BITRATE_KBITS * 2;
 int packetsInBlock = uvgrtp::DEFAULT_PACKETS_IN_FRAGMENT;
+long lastFeedbackReceivedUs = 0;
+bool linkCapacityLow = false;
+std::condition_variable cv;
+std::mutex cv_m;
 
 uvgrtp::rtcp::rtcp(std::shared_ptr<uvgrtp::rtp> rtp, std::shared_ptr<std::atomic_uint> ssrc, std::string cname,
                    int rce_flags) :
@@ -1996,47 +2001,10 @@ rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uvgrtp::frame::rtp_fram
         uvgrtp::frame::ext_header* ext_header = frame->ext;
         //UVG_LOG_DEBUG("header timestamp %llu seq %i marker %i ext_header->type %i ecn_bit %i", header->timestamp, header->seq, header->marker, ext_header->type, ecn_bit);
 
-        if (ecn_bit == ECN_ECT_CE){
-            if (participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block == ECN_IN_BLOCK_INIT)
-                participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block = participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw;
-            participants_[header->ssrc]->receiver_ecn_stats.ect_ce_count_tw++;
-        }
-
         // last fragment of frame, estimate capacity
         long nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-        if (ext_header->type == PROBING_BLOCK_END) {
-
-            long startUs = participants_[header->ssrc]->receiver_ecn_stats.startTimeFrameUs;
-            long diffUs = nowUs - startUs;
-            long byteInFrame = participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame;
-
-            uint32_t capacityKbits = ((byteInFrame-MAX_IPV4_PAYLOAD) * 1e3 * 8) / diffUs;
-            UVG_LOG_DEBUG("capacityKbits %i", capacityKbits);
-
-            float ecnScale = 1;
-            if (participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block != ECN_IN_BLOCK_INIT){
-                int expected_first_ecn_in_block = participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw * 0.8;
-                int diff_pos = expected_first_ecn_in_block - (int)participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block;
-                if (diff_pos > 0){
-                    ecnScale = 1 - ((float) diff_pos / (float)expected_first_ecn_in_block);
-                    capacityKbits *= ecnScale;
-                    UVG_LOG_DEBUG("adjust capacityKbits to %i ecnScale %f packet_count_tw %i first_ecn_in_block %i", capacityKbits,
-                                  ecnScale, participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw, participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block);
-                }
-            }
-
-            if (capacityKbits != participants_[header->ssrc]->receiver_ecn_stats.capacityKbits) {
-                participants_[header->ssrc]->receiver_ecn_stats.capacityKbits = capacityKbits;
-            }
-            // regular ecn feedback
-            if (capacityKbits > 0) {
-                rtp_error_t ret = generate_ecn_report();
-                if (ret != RTP_OK && ret != RTP_NOT_READY)
-                    UVG_LOG_ERROR("Failed to send RTCP status report!");
-            }
-        }
         //new block
         if (ext_header->type == PROBING_BLOCK_START) {
             //UVG_LOG_DEBUG("start of frame %llu", header->timestamp);
@@ -2048,7 +2016,34 @@ rtp_error_t uvgrtp::rtcp::update_ecn_receiver_statistics(uvgrtp::frame::rtp_fram
         }
 
         participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw++;
-        participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame += MAX_IPV4_PAYLOAD;
+        participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame += (uint32_t ) frame->payload_len;
+
+        if (ecn_bit == ECN_ECT_CE){
+            if (participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block == ECN_IN_BLOCK_INIT)
+                participants_[header->ssrc]->receiver_ecn_stats.first_ecn_in_block = participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw - 1;
+            participants_[header->ssrc]->receiver_ecn_stats.ect_ce_count_tw++;
+        }
+
+        if (ext_header->type == PROBING_BLOCK_END) {
+            if (participants_[header->ssrc]->receiver_ecn_stats.packet_count_tw >= MIN_PACKETS_IN_FRAGMENT) {
+                // estimate capacity
+                long startUs = participants_[header->ssrc]->receiver_ecn_stats.startTimeFrameUs;
+                long diffUs = nowUs - startUs;
+                long byteInFrame = participants_[header->ssrc]->receiver_ecn_stats.bytesInFrame;
+
+                uint32_t capacityKbits = ((byteInFrame - MAX_IPV4_PAYLOAD) * 1e3 * 8) / diffUs;
+                //UVG_LOG_DEBUG("capacityKbits %i byteInFrame %i diffUs %il", capacityKbits, byteInFrame, diffUs);
+
+                //capacityKbits = 450;
+                if (capacityKbits != participants_[header->ssrc]->receiver_ecn_stats.capacityKbits)
+                    participants_[header->ssrc]->receiver_ecn_stats.capacityKbits = capacityKbits;
+            }
+
+            // regular ecn feedback
+            rtp_error_t ret = generate_ecn_report();
+            if (ret != RTP_OK && ret != RTP_NOT_READY)
+                UVG_LOG_ERROR("Failed to send RTCP status report!");
+        }
 
         return RTP_OK;
     }
@@ -2069,6 +2064,11 @@ rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uvgrtp::frame::rtp_frame *
 
 rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
                   uvgrtp::frame::rtcp_header &header) {
+    std::lock_guard<std::mutex> lg(cv_m);
+    lastFeedbackReceivedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    cv.notify_all();
+
     auto frame = new uvgrtp::frame::rtcp_ecn_report;
     frame->header = header;
     read_ssrc(buffer, read_ptr, frame->ssrc);
@@ -2087,17 +2087,40 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, s
     frame->capacity_kbits = ntohl(*(uint32_t *) &buffer[read_ptr + 8]);
     frame->early_feedback_mode = ntohl(*(uint32_t *) &buffer[read_ptr + 12]);
 
-    // load controll: compute load from capacity
-    loadkbits = (frame->capacity_kbits * ecn_link_usage_percent) / 100;
-    if (loadkbits < MIN_BITRATE_KBITS)
+    // load control: compute load from capacity
+    if (frame->capacity_kbits < MIN_BITRATE_KBITS) {
+        linkCapacityLow = true;
+        UVG_LOG_DEBUG("link capacity low capacityKbits to %i ", frame->capacity_kbits);
+    } else
+        linkCapacityLow = false;
+
+    loadkbits = frame->capacity_kbits;
+    // l4s evaluation
+    float ecnScale = 1;
+    int ecnPercent = (frame->ect_ce_count_tw * 100)/ frame->packet_count_tw;
+    int diffEcnPercent = ecnPercent - DEFAULT_ECN_IN_BLOCK_PERCENT;
+    if ( diffEcnPercent > 0){
+        ecnScale = 1 - ((float) diffEcnPercent / (float) (100-DEFAULT_ECN_IN_BLOCK_PERCENT));
+        loadkbits *= ecnScale;
+        UVG_LOG_DEBUG("l4s adjust capacityKbits to %i ecnScale %f diffEcnPercent %i",
+                      frame->capacity_kbits, ecnScale, diffEcnPercent);
+    }
+
+    loadkbits = loadkbits * ecn_link_usage_percent / 100;
+
+    if (loadkbits < MIN_BITRATE_KBITS){
+        UVG_LOG_DEBUG("adjust capacity %i to min capacity of %i", loadkbits, MIN_BITRATE_KBITS);
         loadkbits = MIN_BITRATE_KBITS;
-    if (loadkbits > MAX_BITRATE_KBITS)
+    }
+    if (loadkbits > MAX_BITRATE_KBITS){
+        UVG_LOG_DEBUG("adjust capacity %i to max capacity of %i", loadkbits, MAX_BITRATE_KBITS);
         loadkbits = MAX_BITRATE_KBITS;
+    }
 
     frame->capacity_kbits = loadkbits;
 
     packetsInBlock = 0.00015 * loadkbits + 4.9;
-    //UVG_LOG_DEBUG("L4S feedback received capacity_kbits %i early_feedback_mode %i loadkbits %i packetsInBlock %i", frame->capacity_kbits,frame->early_feedback_mode, loadkbits, packetsInBlock);
+    UVG_LOG_DEBUG("L4S feedback received capacity_kbits %i loadkbits %i packetsInBlock %i", frame->capacity_kbits, loadkbits, packetsInBlock);
     participants_mutex_.unlock();
 
     read_ptr += ECN_REPORT_BLOCK_SIZE;
