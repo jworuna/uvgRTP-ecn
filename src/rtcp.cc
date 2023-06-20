@@ -2064,10 +2064,11 @@ rtp_error_t uvgrtp::rtcp::recv_ecn_handler(void *arg, uvgrtp::frame::rtp_frame *
 
 rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, size_t packet_end,
                   uvgrtp::frame::rtcp_header &header) {
-    std::lock_guard<std::mutex> lg(cv_m);
+    std::unique_lock<std::mutex> lg_lf(cv_m);
     lastFeedbackReceivedUs = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
     cv.notify_all();
+    lg_lf.unlock();
 
     auto frame = new uvgrtp::frame::rtcp_ecn_report;
     frame->header = header;
@@ -2091,8 +2092,12 @@ rtp_error_t uvgrtp::rtcp::handle_ecn_packet(uint8_t *buffer, size_t &read_ptr, s
     if (frame->capacity_kbits < MIN_BITRATE_KBITS) {
         linkCapacityLow = true;
         UVG_LOG_DEBUG("link capacity low capacityKbits to %i ", frame->capacity_kbits);
-    } else
+    } else{
+        std::unique_lock<std::mutex> lg_cl(cv_m);
         linkCapacityLow = false;
+        cv.notify_all();
+        lg_cl.unlock();
+    }
 
     loadkbits = frame->capacity_kbits;
     // l4s evaluation
