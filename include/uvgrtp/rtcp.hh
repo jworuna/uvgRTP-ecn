@@ -346,12 +346,13 @@ namespace uvgrtp {
              *
              * \details This function is called when an RTCP APP packet is received
              *
+             * \param arg Optional argument that is passed to the hook when it is called, can be set to nullptr
              * \param hook Function pointer to the hook
              *
              * \retval RTP_OK on success
              * \retval RTP_INVALID_VALUE If hook is nullptr
              */
-            rtp_error_t install_app_hook(void (*hook)(uvgrtp::frame::rtcp_app_packet *));
+            rtp_error_t install_app_hook(void *arg, void (*hook)(void*, uvgrtp::frame::rtcp_app_packet *));
 
             /**
              * \brief Install an RTCP APP packet hook
@@ -614,12 +615,13 @@ namespace uvgrtp {
             void (*sender_hook_)(uvgrtp::frame::rtcp_sender_report *);
             void (*receiver_hook_)(uvgrtp::frame::rtcp_receiver_report *);
             void (*sdes_hook_)(uvgrtp::frame::rtcp_sdes_packet *);
-            void (*app_hook_)(uvgrtp::frame::rtcp_app_packet *);
+            void (*app_hook_)(void*, uvgrtp::frame::rtcp_app_packet *);
             void (*ecn_hook_)(void*, uvgrtp::frame::rtcp_ecn_report *);
             void *ecn_hook_arg_;
 
             void (*bye_hook_)(void*);
             void *bye_hook_arg_;
+            void *app_hook_arg_;
 
             std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_f_;
             std::function<void(std::unique_ptr<uvgrtp::frame::rtcp_sender_report>)>   sr_hook_u_;

@@ -286,8 +286,8 @@ rtp_error_t uvgrtp::frame_queue::flush_queue_paced()
     bool bitrate_is_increasing = current_bitrate >= previousBitrate_;
     bool probing_enabled = true;
     double probing_probability = 0.15;
-    //double probing_capacity_overshoot = 2.5;
-    int probing_count = 4;
+    double probing_capacity_overshoot = 2.5;
+    int probing_count = 8;
 
     rtp_error_t result = RTP_OK;
 
@@ -321,13 +321,7 @@ rtp_error_t uvgrtp::frame_queue::flush_queue_paced()
         packetIndex++;
 
         auto rnd = unif_(re);
-        auto nano_to_wait = (uint64_t)(((double)number_of_send_bits/(double)current_bitrate) * 10'000'000);
         auto should_probe = probing_enabled && bitrate_is_increasing && (rnd < probing_probability);
-        /*
-        auto capacity_overshoot = should_probe ? probing_capacity_overshoot : 0;
-        nano_to_wait = (uint64_t)(0.95 * (double)nano_to_wait * 1.0 / (1 + capacity_overshoot));
-        */
-        auto previous_nano = (uint64_t)std::chrono::nanoseconds(previousNanoToWait_).count();
 
         if (should_probe)
         {
@@ -353,9 +347,31 @@ rtp_error_t uvgrtp::frame_queue::flush_queue_paced()
                 packetIndex++;
             }
         }
+        else
+        {
+            if (packetIndex < number_of_packets)
+            {
+                if (!(rce_flags_ & RCE_ECN_TRAFFIC))
+                    result = socket_->sendto(active_->packets[packetIndex], 0);
+                else
+                {
+#ifdef _WIN32
+                    result = socket_->sendto(active_->packets[packetIndex], 0, ((rce_flags_ & RCE_ECN_ECT_1)) ? ECN_ECT_1 : ECN_ECT_0);
+#else
+                    result = socket_->sendto(active_->packets[packetIndex], 0);
+#endif
+                }
 
+                packetIndex++;
+            }
+        }
+
+        auto nano_to_wait = (uint64_t)(((double)number_of_send_bits/(double)current_bitrate) * 10'000'000);
         auto elapsed_time = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::high_resolution_clock::now() - start_time_).count();
+        auto capacity_overshoot = should_probe ? probing_capacity_overshoot : 0;
+        nano_to_wait = (uint64_t)(0.95 * (double)nano_to_wait * 1.0 / (1 + capacity_overshoot));
+        auto previous_nano = (uint64_t)std::chrono::nanoseconds(previousNanoToWait_).count();
 
         //UVG_LOG_DEBUG("number_of_send_bits %llu /(double)current_bitrate %llu", number_of_send_bits, current_bitrate);
         //UVG_LOG_DEBUG("elapsed_time %llu - previous_nano %llu < nano_to_wait %llu", elapsed_time, previous_nano, nano_to_wait);

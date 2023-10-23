@@ -48,7 +48,7 @@ int main(void)
      *
      * See sending.cc for more details about create_stream() */
 
-    int send_flags = RCE_FRAGMENT_GENERIC | RCE_SEND_ONLY;
+    int send_flags = RCE_FRAGMENT_GENERIC | RCE_SEND_ONLY | RCE_ECN_PACKET_PACER;
     int receive_flags = RCE_FRAGMENT_GENERIC | RCE_RECEIVE_ONLY;
 
     // set only one port, this one port is interpreted based on rce flags

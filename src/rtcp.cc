@@ -866,22 +866,6 @@ rtp_error_t uvgrtp::rtcp::install_sdes_hook(std::function<void(std::unique_ptr<u
     return RTP_OK;
 }
 
-rtp_error_t uvgrtp::rtcp::install_app_hook(void (*hook)(uvgrtp::frame::rtcp_app_packet*))
-{
-    if (!hook)
-    {
-        return RTP_INVALID_VALUE;
-    }
-
-    app_mutex_.lock();
-    app_hook_   = hook;
-    app_hook_f_ = nullptr;
-    app_hook_u_ = nullptr;
-    app_mutex_.unlock();
-
-    return RTP_OK;
-}
-
 rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>)> app_handler)
 {
     if (!app_handler)
@@ -909,6 +893,23 @@ rtp_error_t uvgrtp::rtcp::install_app_hook(std::function<void(std::unique_ptr<uv
     app_hook_   = nullptr;
     app_hook_f_ = nullptr;
     app_hook_u_ = app_handler;
+    app_mutex_.unlock();
+
+    return RTP_OK;
+}
+
+rtp_error_t uvgrtp::rtcp::install_app_hook(void* arg, void (*hook)(void*, uvgrtp::frame::rtcp_app_packet *))
+{
+    if (!hook)
+    {
+        return RTP_INVALID_VALUE;
+    }
+
+    app_mutex_.lock();
+    app_hook_   = hook;
+    app_hook_f_ = nullptr;
+    app_hook_u_ = nullptr;
+    app_hook_arg_ = arg;
     app_mutex_.unlock();
 
     return RTP_OK;
@@ -1872,7 +1873,7 @@ rtp_error_t uvgrtp::rtcp::handle_app_packet(uint8_t* packet, size_t& read_ptr,
 
     app_mutex_.lock();
     if (app_hook_) {
-        app_hook_(frame);
+        app_hook_(app_hook_arg_, frame);
     } else if (app_hook_f_) {
         app_hook_f_(std::shared_ptr<uvgrtp::frame::rtcp_app_packet>(frame));
     } else if (app_hook_u_) {
